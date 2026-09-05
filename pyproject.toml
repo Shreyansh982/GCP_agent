@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling>=1.25,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gcp-observability-investigation-agent"
+version = "0.1.0"
+description = "Evidence-backed, bounded GCP observability investigations."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "google-genai>=1,<2",
+    "pydantic>=2.7,<3",
+    "streamlit>=1.40,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8,<9",
+    "ruff>=0.8,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gcp_observability_agent"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+

@@ -1,0 +1,2 @@
+"""Investigation application use cases."""
+

@@ -1,0 +1,2 @@
+"""Deterministic mock telemetry adapter."""
+

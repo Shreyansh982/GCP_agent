@@ -1,0 +1,2 @@
+"""Persistence adapter implementations."""
+
