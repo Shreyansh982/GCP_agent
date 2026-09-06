@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from gcp_observability_agent.domain.common.ids import ObservationId
+from gcp_observability_agent.domain.common.ids import InvestigationStepId, ObservationId
 from gcp_observability_agent.domain.common.time import TimeInterval
 from gcp_observability_agent.domain.evidence.models import (
     EvidenceReference,
@@ -205,6 +205,7 @@ class ToolPolicy:
 class ToolExecutionContext:
     investigation: Investigation
     allowed_projects: frozenset[str]
+    step_id: InvestigationStepId | None = None
 
 
 class RetryClassification(StrEnum):
@@ -229,7 +230,7 @@ class ToolRegistry:
         self._attempts: dict[str, int] = {}
         self._replays: dict[tuple[str, str], ToolResponse] = {}
 
-    def execute(self, raw_request: object, context: ToolExecutionContext) -> ToolResponse:
+    def execute(self, raw_request: object, context: ToolExecutionContext, *, replay: bool = True) -> ToolResponse:
         try:
             request = ToolRequestEnvelope.model_validate(raw_request)
         except ValidationError as error:
@@ -251,7 +252,7 @@ class ToolRegistry:
             return semantic_error
 
         replay_key = (str(context.investigation.investigation_id), self._identity(request.tool_name, arguments))
-        previous = self._replays.get(replay_key)
+        previous = self._replays.get(replay_key) if replay else None
         if previous is not None:
             return previous.model_copy(update={"request_id": request.request_id})
 
@@ -271,7 +272,8 @@ class ToolRegistry:
         except Exception:
             response = self._error(request, ToolResultStatus.PROVIDER_ERROR, "PROVIDER_ERROR", "The telemetry provider could not complete the request.", retryable=True)
 
-        self._replays[replay_key] = response
+        if replay:
+            self._replays[replay_key] = response
         return response
 
     def _parse_arguments(self, request: ToolRequestEnvelope) -> ArgumentsModel:
@@ -322,7 +324,7 @@ class ToolRegistry:
         if request.tool_name is ToolName.QUERY_METRIC:
             assert isinstance(arguments, QueryMetricArguments)
             series = self._provider.query_metric(self._provider_request(arguments, context))
-            return self._series_result(request, series, context.investigation)
+            return self._series_result(request, series, context.investigation, context.step_id)
         if request.tool_name is ToolName.LIST_RESOURCES:
             assert isinstance(arguments, ListResourcesArguments)
             resources = self._provider.list_resources(self._provider_request(arguments, context))
@@ -330,7 +332,7 @@ class ToolRegistry:
         if request.tool_name is ToolName.GET_ALERTS:
             assert isinstance(arguments, GetAlertsArguments)
             alerts = self._provider.get_alerts(self._provider_request(arguments, context))
-            return self._alerts_result(request, alerts, context.investigation)
+            return self._alerts_result(request, alerts, context.investigation, context.step_id)
         assert isinstance(arguments, ConcludeInvestigationArguments)
         return self._conclusion_result(request, arguments, context.investigation)
 
@@ -353,17 +355,17 @@ class ToolRegistry:
         data = {"resources": [self._resource(item) for item in returned], "result_metadata": metadata}
         return self._result(request, ToolResultStatus.SUCCESS if returned else ToolResultStatus.NO_DATA, data, warnings=("No resources matched the request.",) if not returned else ())
 
-    def _series_result(self, request: ToolRequestEnvelope, series: Any, investigation: Investigation) -> ToolResponse:
+    def _series_result(self, request: ToolRequestEnvelope, series: Any, investigation: Investigation, step_id: InvestigationStepId | None) -> ToolResponse:
         items = list(series)
         returned, metadata = self._bounded(items)
-        observations = [self._record_series_observation(item, investigation) for item in returned]
+        observations = [self._record_series_observation(item, investigation, step_id) for item in returned]
         data = {"observations": observations, "summary": {"series_count": len(items), "point_count": sum(len(item.points) for item in items)}, "result_metadata": metadata}
         return self._result(request, ToolResultStatus.SUCCESS if observations else ToolResultStatus.NO_DATA, data, warnings=("No observations matched the requested scope and time interval.",) if not observations else ())
 
-    def _alerts_result(self, request: ToolRequestEnvelope, alerts: Any, investigation: Investigation) -> ToolResponse:
+    def _alerts_result(self, request: ToolRequestEnvelope, alerts: Any, investigation: Investigation, step_id: InvestigationStepId | None) -> ToolResponse:
         items = list(alerts)
         returned, metadata = self._bounded(items)
-        observations = [self._record_alert_observation(item, investigation) for item in returned]
+        observations = [self._record_alert_observation(item, investigation, step_id) for item in returned]
         data = {"alerts": observations, "result_metadata": metadata}
         return self._result(request, ToolResultStatus.SUCCESS if observations else ToolResultStatus.NO_DATA, data, warnings=("No alerts matched the requested scope and time interval.",) if not observations else ())
 
@@ -382,7 +384,7 @@ class ToolRegistry:
             return self._error(request, ToolResultStatus.INVALID_REQUEST, "INVALID_CONCLUSION", "Findings require supporting evidence.")
         return self._result(request, ToolResultStatus.SUCCESS, {"validated": True, "findings": [self._finding_data(item) for item in findings], "hypotheses": [self._hypothesis_data(item) for item in hypotheses], "unresolved_questions": list(arguments.unresolved_questions)})
 
-    def _record_series_observation(self, series: TimeSeries, investigation: Investigation) -> dict[str, object]:
+    def _record_series_observation(self, series: TimeSeries, investigation: Investigation, step_id: InvestigationStepId | None) -> dict[str, object]:
         numeric_values = [float(point.value) for point in series.points if isinstance(point.value, (int, float)) and not isinstance(point.value, bool)]
         value: float | str = mean(numeric_values) if numeric_values else str(series.points[-1].value)
         start = series.points[0].sort_time
@@ -392,6 +394,7 @@ class ToolRegistry:
         observation = Observation(
             ObservationId.new(), investigation.investigation_id,
             f"Observed {series.metric.metric_type} on {series.resource.resource_id} across {len(series.points)} point(s).",
+            step_id=step_id,
             metric_type=series.metric.metric_type, resource_id=series.resource.resource_id, interval=interval,
             numeric_value=value, unit=unit,
             provenance={"source": "telemetry", "metric_labels": dict(series.metric.labels.values), "resource_labels": dict(series.resource.labels.values), "point_count": len(series.points), "minimum": min(numeric_values) if numeric_values else None, "maximum": max(numeric_values) if numeric_values else None, "trend": trend_direction(numeric_values) if len(numeric_values) > 1 else None},
@@ -399,11 +402,12 @@ class ToolRegistry:
         investigation.record_observation(observation)
         return {"observation_id": observation.evidence_id, "metric": {"type": str(series.metric.metric_type), "labels": dict(series.metric.labels.values)}, "resource": self._resource(series.resource), "value": value, "unit": unit, "interval": {"start_time": interval.start_time.isoformat(), "end_time": interval.end_time.isoformat()}}
 
-    def _record_alert_observation(self, alert: Alert, investigation: Investigation) -> dict[str, object]:
+    def _record_alert_observation(self, alert: Alert, investigation: Investigation, step_id: InvestigationStepId | None) -> dict[str, object]:
         end = alert.end_time or alert.start_time + timedelta(microseconds=1)
         observation = Observation(
             ObservationId.new(), investigation.investigation_id,
             f"Alert {alert.alert_id} was {alert.status} with severity {alert.severity}.",
+            step_id=step_id,
             metric_type=alert.metric.metric_type if alert.metric else None,
             resource_id=alert.resource.resource_id if alert.resource else None,
             interval=TimeInterval(alert.start_time, max(end, alert.start_time + timedelta(microseconds=1))),

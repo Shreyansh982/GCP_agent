@@ -433,8 +433,8 @@ Do not automatically continue into the next milestone.
 
 # CURRENT IMPLEMENTATION STATE
 
-Previous milestone achieved: M4
-Current milestone: M5
+Previous milestone achieved: M5
+Current milestone: M6
 Status: NOT STARTED
 
 Before implementing a milestone, inspect the repository and the complete docs/ directory as necessary to understand the current implementation state.

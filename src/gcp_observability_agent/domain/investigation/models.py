@@ -324,6 +324,17 @@ class Investigation:
             raise DomainRuleViolation("investigation steps must have monotonic sequence numbers")
         self._steps.append(step)
 
+    def complete_step(self, step: InvestigationStep) -> None:
+        """Finalize the most recently recorded action without rewriting history."""
+        self._require_running()
+        if not self._steps or self._steps[-1].step_id != step.step_id:
+            raise DomainRuleViolation("only the current investigation step can be completed")
+        if self._steps[-1].completed_at is not None:
+            raise DomainRuleViolation("an investigation step cannot be completed twice")
+        if step.completed_at is None or step.tool_result is None:
+            raise DomainRuleViolation("a completed step requires a result and completion time")
+        self._steps[-1] = step
+
     def record_observation(self, observation: Observation) -> None:
         self._require_running()
         if observation.investigation_id != self.investigation_id:
@@ -373,4 +384,3 @@ class Investigation:
     def _require_running(self) -> None:
         if self._status is not InvestigationStatus.RUNNING:
             raise DomainRuleViolation("investigation is not running")
-
