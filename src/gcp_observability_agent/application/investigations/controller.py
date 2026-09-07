@@ -14,6 +14,7 @@ from gcp_observability_agent.application.investigations.tools import (
     ToolRegistry,
     ToolResponse,
 )
+from gcp_observability_agent.application.common.events import ProgressEvent, ProgressSink
 from gcp_observability_agent.domain.common.ids import FindingId, HypothesisId, InvestigationStepId, ToolResultId
 from gcp_observability_agent.domain.evidence.models import EvidenceReference, Finding, Hypothesis
 from gcp_observability_agent.domain.investigation.models import (
@@ -153,6 +154,7 @@ class InvestigationController:
         context_builder: ContextBuilder | None = None,
         policy: ControllerPolicy = ControllerPolicy(),
         clock: Callable[[], datetime] | None = None,
+        progress_sink: ProgressSink | None = None,
     ) -> None:
         self._llm = llm
         self._tools = tools
@@ -161,6 +163,7 @@ class InvestigationController:
         self._context_builder = context_builder or ContextBuilder()
         self._policy = policy
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._progress_sink = progress_sink
 
     def run(self, investigation: Investigation) -> Investigation:
         if investigation.status is InvestigationStatus.TERMINAL:
@@ -169,6 +172,7 @@ class InvestigationController:
         if investigation.status is InvestigationStatus.CREATED:
             investigation.start()
             version = self._repository.save(investigation, expected_version=version)
+            self._emit("investigation_started", investigation)
 
         started_at = self._clock()
         while investigation.status is InvestigationStatus.RUNNING:
@@ -187,6 +191,8 @@ class InvestigationController:
                 InvestigationStepId.new(), len(investigation.steps) + 1, action, self._clock()
             )
             investigation.record_step(step)
+            self._emit("step_started", investigation, step_id=str(step.step_id), tool_name=action.tool_name.value)
+            observation_count = len(investigation.observations)
             response = self._execute(action, investigation, step.step_id)
             completed = step.complete(
                 validation_status=self._validation_status(response),
@@ -199,6 +205,13 @@ class InvestigationController:
             )
             investigation.complete_step(completed)
             version = self._repository.save(investigation, expected_version=version)
+            self._emit(
+                "tool_completed", investigation, step_id=str(step.step_id), tool_name=action.tool_name.value,
+                status=response.status.value, error_code=response.error.code if response.error else None,
+            )
+            evidence_created = len(investigation.observations) - observation_count
+            if evidence_created:
+                self._emit("evidence_created", investigation, step_id=str(step.step_id), count=evidence_created)
 
             if action.tool_name.value == "conclude_investigation" and response.status is ToolResultStatus.SUCCESS:
                 self._ingest_conclusion(action, investigation)
@@ -275,4 +288,25 @@ class InvestigationController:
 
     def _persist_terminal(self, investigation: Investigation, version: int) -> Investigation:
         self._repository.save(investigation, expected_version=version)
+        assert investigation.outcome is not None
+        event_name = (
+            "investigation_concluded"
+            if investigation.outcome.status in {OutcomeStatus.COMPLETED, OutcomeStatus.INSUFFICIENT_EVIDENCE}
+            else "investigation_terminated"
+        )
+        self._emit(
+            event_name,
+            investigation,
+            outcome_status=investigation.outcome.status.value,
+            termination_reason=investigation.outcome.termination_reason.value,
+        )
         return investigation
+
+    def _emit(self, name: str, investigation: Investigation, *, step_id: str | None = None, **details: object) -> None:
+        if self._progress_sink is None:
+            return
+        try:
+            self._progress_sink(ProgressEvent(name, str(investigation.investigation_id), step_id, details))
+        except Exception:
+            # Progress reporting must not alter investigation lifecycle or persistence.
+            return
