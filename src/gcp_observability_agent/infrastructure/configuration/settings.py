@@ -24,6 +24,10 @@ class Settings:
     database_path: str = "gcp_observability_agent.sqlite3"
     allowed_projects: tuple[str, ...] = ()
     mock_scenario: str | None = None
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_temperature: float = 0.0
+    gemini_timeout_seconds: int = 30
+    gemini_max_retries: int = 1
     log_level: str = "INFO"
 
     @classmethod
@@ -43,5 +47,9 @@ class Settings:
                 project.strip() for project in getenv("GCP_AGENT_ALLOWED_PROJECTS", "").split(",") if project.strip()
             ),
             mock_scenario=getenv("GCP_AGENT_MOCK_SCENARIO") or None,
+            gemini_model=getenv("GCP_AGENT_GEMINI_MODEL", "gemini-2.5-flash"),
+            gemini_temperature=float(getenv("GCP_AGENT_GEMINI_TEMPERATURE", "0")),
+            gemini_timeout_seconds=int(getenv("GCP_AGENT_GEMINI_TIMEOUT_SECONDS", "30")),
+            gemini_max_retries=int(getenv("GCP_AGENT_GEMINI_MAX_RETRIES", "1")),
             log_level=getenv("GCP_AGENT_LOG_LEVEL", "INFO"),
         )

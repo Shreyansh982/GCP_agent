@@ -58,3 +58,11 @@ def test_application_does_not_depend_on_infrastructure(source_file: Path) -> Non
 def test_presentation_invokes_application_only(source_file: Path) -> None:
     forbidden = (f"{PACKAGE_NAME}.domain", f"{PACKAGE_NAME}.infrastructure")
     assert not any(module.startswith(forbidden) for module in _imported_project_modules(source_file))
+
+
+def test_gemini_sdk_imports_are_confined_to_the_infrastructure_adapter() -> None:
+    imported_files = [
+        path for path in PACKAGE_ROOT.rglob("*.py")
+        if "google.genai" in path.read_text(encoding="utf-8")
+    ]
+    assert imported_files == [PACKAGE_ROOT / "infrastructure" / "llm" / "gemini.py"]

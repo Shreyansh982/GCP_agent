@@ -17,6 +17,7 @@ from gcp_observability_agent.application.investigations.service import Investiga
 from gcp_observability_agent.application.investigations.tools import ToolPolicy, ToolRegistry
 from gcp_observability_agent.domain.ports import LLMProvider
 from gcp_observability_agent.infrastructure.configuration.settings import Settings
+from gcp_observability_agent.infrastructure.llm.gemini import GeminiLLMConfig, GeminiLLMProvider
 from gcp_observability_agent.infrastructure.persistence.sqlite.repository import SQLiteInvestigationRepository
 from gcp_observability_agent.infrastructure.telemetry.mock.provider import MockTelemetryProvider
 
@@ -63,4 +64,17 @@ def build_phase_one_container(
     )
     return PhaseOneContainer(
         InvestigationApplicationService(controller, structured_logger), telemetry_provider, repository
+    )
+
+
+def build_gemini_llm_provider(settings: Settings | None = None) -> GeminiLLMProvider:
+    """Build the production LLM adapter from safe runtime settings and an environment secret."""
+    resolved = settings or Settings.from_environment()
+    return GeminiLLMProvider.from_environment(
+        GeminiLLMConfig(
+            model=resolved.gemini_model,
+            temperature=resolved.gemini_temperature,
+            timeout_seconds=resolved.gemini_timeout_seconds,
+            max_retries=resolved.gemini_max_retries,
+        )
     )
