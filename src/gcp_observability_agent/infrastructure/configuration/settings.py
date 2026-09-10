@@ -21,6 +21,10 @@ class Settings:
     max_tool_retries: int = 1
     max_context_evidence: int = 50
     max_prior_tool_results: int = 12
+    max_investigation_question_length: int = 4_000
+    max_tool_request_payload_bytes: int = 32 * 1024
+    max_label_filter_entries: int = 50
+    max_collection_items: int = 100
     database_path: str = "gcp_observability_agent.sqlite3"
     allowed_projects: tuple[str, ...] = ()
     mock_scenario: str | None = None
@@ -42,6 +46,10 @@ class Settings:
             max_tool_retries=int(getenv("GCP_AGENT_MAX_TOOL_RETRIES", "1")),
             max_context_evidence=int(getenv("GCP_AGENT_MAX_CONTEXT_EVIDENCE", "50")),
             max_prior_tool_results=int(getenv("GCP_AGENT_MAX_PRIOR_TOOL_RESULTS", "12")),
+            max_investigation_question_length=int(getenv("GCP_AGENT_MAX_INVESTIGATION_QUESTION_LENGTH", "4000")),
+            max_tool_request_payload_bytes=int(getenv("GCP_AGENT_MAX_TOOL_REQUEST_PAYLOAD_BYTES", str(32 * 1024))),
+            max_label_filter_entries=int(getenv("GCP_AGENT_MAX_LABEL_FILTER_ENTRIES", "50")),
+            max_collection_items=int(getenv("GCP_AGENT_MAX_COLLECTION_ITEMS", "100")),
             database_path=getenv("GCP_AGENT_DATABASE_PATH", "gcp_observability_agent.sqlite3"),
             allowed_projects=tuple(
                 project.strip() for project in getenv("GCP_AGENT_ALLOWED_PROJECTS", "").split(",") if project.strip()

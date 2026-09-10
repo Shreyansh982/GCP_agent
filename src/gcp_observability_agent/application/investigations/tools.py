@@ -199,6 +199,9 @@ class ToolPolicy:
     max_actions: int = 12
     max_result_items: int = 100
     max_query_interval: timedelta = timedelta(days=7)
+    max_request_payload_bytes: int = 32 * 1024
+    max_label_filter_entries: int = 50
+    max_collection_items: int = 100
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,6 +241,9 @@ class ToolRegistry:
 
         if context.investigation.status is not InvestigationStatus.RUNNING:
             return self._error(request, ToolResultStatus.INVALID_REQUEST, "INVESTIGATION_NOT_RUNNING", "The investigation is not running.")
+
+        if self._serialized_size(raw_request) > self._policy.max_request_payload_bytes:
+            return self._error(request, ToolResultStatus.POLICY_REJECTED, "REQUEST_PAYLOAD_TOO_LARGE", "The tool request exceeds the application payload limit.")
 
         try:
             arguments = self._parse_arguments(request)
@@ -303,14 +309,27 @@ class ToolRegistry:
         limit = getattr(arguments, "limit", None)
         if limit is not None and limit > self._policy.max_result_items:
             return self._error(request, ToolResultStatus.POLICY_REJECTED, "RESULT_LIMIT_TOO_LARGE", "The requested result limit exceeds the application limit.")
+        for labels in self._label_filters(arguments):
+            if len(labels) > self._policy.max_label_filter_entries:
+                return self._error(request, ToolResultStatus.POLICY_REJECTED, "LABEL_FILTER_LIMIT_EXCEEDED", "A label-filter map exceeds the application limit.")
         return None
+
+    @staticmethod
+    def _label_filters(arguments: ArgumentsModel) -> tuple[dict[str, object], ...]:
+        if isinstance(arguments, QueryMetricArguments):
+            return (dict(arguments.metric.labels), dict(arguments.resource.labels))
+        if isinstance(arguments, ListResourcesArguments):
+            return (dict(arguments.labels),)
+        if isinstance(arguments, GetAlertsArguments) and arguments.resource is not None:
+            return (dict(arguments.resource.labels),)
+        return ()
 
     def _validate_metric_descriptor(self, request: ToolRequestEnvelope, arguments: ArgumentsModel) -> ToolResponse | None:
         assert isinstance(arguments, QueryMetricArguments)
-        descriptors = self._provider.search_metric_descriptors({"query": arguments.metric.type, "resource_type": arguments.resource.type})
+        descriptors = self._provider.search_metric_descriptors({"query": arguments.metric.type})
         descriptor = next((item for item in descriptors if str(item.metric_type) == arguments.metric.type), None)
         if descriptor is None:
-            return self._error(request, ToolResultStatus.NOT_FOUND, "METRIC_NOT_FOUND", "The selected metric is not available for the requested resource type.")
+            return self._error(request, ToolResultStatus.NOT_FOUND, "METRIC_NOT_FOUND", "The selected metric is not available.")
         invalid_labels = sorted(set(arguments.metric.labels) - descriptor.label_keys)
         if invalid_labels:
             return self._error(request, ToolResultStatus.INVALID_REQUEST, "INVALID_METRIC_LABEL", "Metric-label filters must be defined by the selected metric descriptor.", details={"invalid_labels": invalid_labels})
@@ -327,20 +346,22 @@ class ToolRegistry:
             return self._series_result(request, series, context.investigation, context.step_id)
         if request.tool_name is ToolName.LIST_RESOURCES:
             assert isinstance(arguments, ListResourcesArguments)
-            resources = self._provider.list_resources(self._provider_request(arguments, context))
-            return self._resources_result(request, resources)
+            resources = self._provider.list_resources(self._provider_request(arguments, context, collection_bound=True))
+            return self._resources_result(request, resources, collection_bounded=True)
         if request.tool_name is ToolName.GET_ALERTS:
             assert isinstance(arguments, GetAlertsArguments)
-            alerts = self._provider.get_alerts(self._provider_request(arguments, context))
-            return self._alerts_result(request, alerts, context.investigation, context.step_id)
+            alerts = self._provider.get_alerts(self._provider_request(arguments, context, collection_bound=True))
+            return self._alerts_result(request, alerts, context.investigation, context.step_id, collection_bounded=True)
         assert isinstance(arguments, ConcludeInvestigationArguments)
         return self._conclusion_result(request, arguments, context.investigation)
 
-    def _provider_request(self, arguments: BaseModel, context: ToolExecutionContext) -> dict[str, object]:
+    def _provider_request(self, arguments: BaseModel, context: ToolExecutionContext, *, collection_bound: bool = False) -> dict[str, object]:
         values = arguments.model_dump(mode="json", exclude_none=True)
         scope_project = context.investigation.scope.project_id
         if "project_id" in type(arguments).model_fields and "project_id" not in values and scope_project:
             values["project_id"] = str(scope_project)
+        if collection_bound:
+            values["_collection_limit"] = min(self._policy.max_collection_items, self._policy.max_result_items)
         return values
 
     def _descriptors_result(self, request: ToolRequestEnvelope, descriptors: Any) -> ToolResponse:
@@ -349,11 +370,12 @@ class ToolRegistry:
         data = {"metrics": [self._descriptor(item) for item in returned], "result_metadata": metadata}
         return self._result(request, ToolResultStatus.SUCCESS if returned else ToolResultStatus.NO_DATA, data, warnings=("No metric descriptors matched the request.",) if not returned else ())
 
-    def _resources_result(self, request: ToolRequestEnvelope, resources: Any) -> ToolResponse:
+    def _resources_result(self, request: ToolRequestEnvelope, resources: Any, *, collection_bounded: bool = False) -> ToolResponse:
         items = list(resources)
-        returned, metadata = self._bounded(items)
+        returned, metadata = self._bounded(items, collection_bounded=collection_bounded)
         data = {"resources": [self._resource(item) for item in returned], "result_metadata": metadata}
-        return self._result(request, ToolResultStatus.SUCCESS if returned else ToolResultStatus.NO_DATA, data, warnings=("No resources matched the request.",) if not returned else ())
+        warnings = ("No resources matched the request.",) if not returned else (("Resource results were truncated.",) if metadata["truncated"] else ())
+        return self._result(request, ToolResultStatus.SUCCESS if returned else ToolResultStatus.NO_DATA, data, warnings=warnings)
 
     def _series_result(self, request: ToolRequestEnvelope, series: Any, investigation: Investigation, step_id: InvestigationStepId | None) -> ToolResponse:
         items = list(series)
@@ -362,12 +384,13 @@ class ToolRegistry:
         data = {"observations": observations, "summary": {"series_count": len(items), "point_count": sum(len(item.points) for item in items)}, "result_metadata": metadata}
         return self._result(request, ToolResultStatus.SUCCESS if observations else ToolResultStatus.NO_DATA, data, warnings=("No observations matched the requested scope and time interval.",) if not observations else ())
 
-    def _alerts_result(self, request: ToolRequestEnvelope, alerts: Any, investigation: Investigation, step_id: InvestigationStepId | None) -> ToolResponse:
+    def _alerts_result(self, request: ToolRequestEnvelope, alerts: Any, investigation: Investigation, step_id: InvestigationStepId | None, *, collection_bounded: bool = False) -> ToolResponse:
         items = list(alerts)
-        returned, metadata = self._bounded(items)
+        returned, metadata = self._bounded(items, collection_bounded=collection_bounded)
         observations = [self._record_alert_observation(item, investigation, step_id) for item in returned]
         data = {"alerts": observations, "result_metadata": metadata}
-        return self._result(request, ToolResultStatus.SUCCESS if observations else ToolResultStatus.NO_DATA, data, warnings=("No alerts matched the requested scope and time interval.",) if not observations else ())
+        warnings = ("No alerts matched the requested scope and time interval.",) if not observations else (("Alert results were truncated.",) if metadata["truncated"] else ())
+        return self._result(request, ToolResultStatus.SUCCESS if observations else ToolResultStatus.NO_DATA, data, warnings=warnings)
 
     def _conclusion_result(self, request: ToolRequestEnvelope, arguments: ConcludeInvestigationArguments, investigation: Investigation) -> ToolResponse:
         valid_ids = investigation.evidence_ids
@@ -416,9 +439,19 @@ class ToolRegistry:
         investigation.record_observation(observation)
         return {"observation_id": observation.evidence_id, "alert_id": alert.alert_id, "condition": alert.condition, "severity": alert.severity, "status": alert.status}
 
-    def _bounded(self, items: list[Any]) -> tuple[list[Any], dict[str, object]]:
+    def _bounded(self, items: list[Any], *, collection_bounded: bool = False) -> tuple[list[Any], dict[str, object]]:
         returned = items[:self._policy.max_result_items]
-        return returned, ResultMetadata(returned_count=len(returned), total_count_known=len(items), truncated=len(returned) < len(items)).model_dump(mode="json")
+        collection_limit = min(self._policy.max_collection_items, self._policy.max_result_items)
+        truncated = len(returned) < len(items) or (collection_bounded and len(items) == collection_limit)
+        return returned, ResultMetadata(
+            returned_count=len(returned),
+            total_count_known=None if collection_bounded and truncated else len(items),
+            truncated=truncated,
+        ).model_dump(mode="json")
+
+    @staticmethod
+    def _serialized_size(value: object) -> int:
+        return len(json.dumps(value, default=str, separators=(",", ":")).encode("utf-8"))
 
     @staticmethod
     def _descriptor(descriptor: MetricDescriptor) -> dict[str, object]:

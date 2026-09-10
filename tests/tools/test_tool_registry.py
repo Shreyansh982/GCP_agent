@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from gcp_observability_agent.infrastructure.persistence.sqlite.database import connect, transaction
 from gcp_observability_agent.application.investigations.tools import (
     RetryClassification,
     ToolExecutionContext,
@@ -151,6 +152,70 @@ def test_malformed_and_unregistered_executable_requests_cannot_reach_provider(tm
     assert shell.status is ToolResultStatus.INVALID_REQUEST
     assert python.status is ToolResultStatus.INVALID_REQUEST
     assert provider.calls == {"search": 0, "query": 0, "resources": 0, "alerts": 0}
+
+
+def test_payload_and_label_filter_limits_reject_requests_before_provider_execution(tmp_path) -> None:
+    base = MockTelemetryProvider(tmp_path / "telemetry.sqlite3")
+    base.load_scenario(PROJECT)
+    provider = CountingProvider(base)
+    registry = ToolRegistry(provider)
+    context = _context(_investigation())
+
+    payload = registry.execute(
+        {"request_id": "payload", "tool_name": "search_metric_descriptors", "arguments": {"query": "x" * (32 * 1024)}},
+        context,
+    )
+    labels = registry.execute(
+        _query(metric={"type": "example.googleapis.com/cpu_utilization", "labels": {f"label-{index}": "value" for index in range(51)}}),
+        context,
+    )
+
+    assert payload.status is ToolResultStatus.POLICY_REJECTED
+    assert payload.error.code == "REQUEST_PAYLOAD_TOO_LARGE"
+    assert labels.status is ToolResultStatus.POLICY_REJECTED
+    assert labels.error.code == "LABEL_FILTER_LIMIT_EXCEEDED"
+    assert provider.calls == {"search": 0, "query": 0, "resources": 0, "alerts": 0}
+
+
+def test_resource_and_alert_collections_are_bounded_before_tool_result_materialization(tmp_path) -> None:
+    database_path = tmp_path / "collections.sqlite3"
+    provider = MockTelemetryProvider(database_path)
+    provider.load_scenario(PROJECT)
+    timestamp = "2026-08-27T14:00:00+00:00"
+    with connect(database_path) as connection, transaction(connection):
+        for index in range(101):
+            resource_id = f"{PROJECT}:extra-{index:03d}"
+            connection.execute(
+                "INSERT INTO monitored_resources(resource_id, project_id, resource_type, display_name, metadata_json, created_at) VALUES (?, ?, 'cloud_run_revision', ?, '{}', ?)",
+                (resource_id, PROJECT, resource_id, timestamp),
+            )
+            connection.execute(
+                "INSERT INTO alerts(alert_id, project_id, policy_reference, condition_text, severity, status, start_time, resource_id, metadata_json, created_at) VALUES (?, ?, 'policy', 'Test alert', 'WARNING', 'OPEN', ?, ?, '{}', ?)",
+                (f"{PROJECT}:alert-{index:03d}", PROJECT, timestamp, resource_id, timestamp),
+            )
+
+    registry = ToolRegistry(provider)
+    context = _context(_investigation())
+    resources = registry.execute(
+        {"request_id": "resources", "tool_name": "list_resources", "arguments": {"resource_type": "cloud_run_revision"}},
+        context,
+    )
+    alerts = registry.execute(
+        {"request_id": "alerts", "tool_name": "get_alerts", "arguments": {"interval": INTERVAL}},
+        context,
+    )
+
+    assert len(provider.list_resources({"project_id": PROJECT, "_collection_limit": 100})) == 100
+    assert len(provider.get_alerts({"project_id": PROJECT, "interval": INTERVAL, "_collection_limit": 100})) == 100
+    for response in (resources, alerts):
+        assert response.data["result_metadata"] == {
+            "returned_count": 100,
+            "total_count_known": None,
+            "truncated": True,
+            "transformed": False,
+            "transformation_summary": None,
+        }
+        assert response.warnings
 
 
 def test_result_processing_creates_stable_evidence_and_replay_does_not_create_more(tmp_path) -> None:

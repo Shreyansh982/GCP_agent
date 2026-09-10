@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from gcp_observability_agent.application.investigations.controller import (
     ContextBuilder,
     ContextPolicy,
@@ -46,10 +48,14 @@ def _action(name: ToolName, arguments: dict[str, object]) -> object:
 
 
 def _query() -> object:
+    return _metric_query("example.googleapis.com/cpu_utilization", labels={"route": "/charge"})
+
+
+def _metric_query(metric_type: str, *, labels: dict[str, str] | None = None) -> object:
     return _action(
         ToolName.QUERY_METRIC,
         {
-            "metric": {"type": "example.googleapis.com/cpu_utilization", "labels": {"route": "/charge"}},
+            "metric": {"type": metric_type, "labels": labels or {}},
             "resource": {"type": "cloud_run_revision", "labels": {"service": "payments"}},
             "interval": INTERVAL,
         },
@@ -167,6 +173,49 @@ def test_malformed_llm_action_fails_validation_without_executing_a_tool(tmp_path
     assert result.steps == ()
 
 
+def test_credential_exfiltration_attempt_cannot_reach_context_tools_or_output(tmp_path, monkeypatch) -> None:
+    secret = "phase-one-test-secret"
+    monkeypatch.setenv("GEMINI_API_KEY", secret)
+
+    def credential_request(context):
+        assert secret not in repr(context)
+        return {"tool_name": "credential_lookup", "arguments": {"name": "GEMINI_API_KEY"}}
+
+    llm = FakeLLMProvider([credential_request])
+    controller, _ = _controller(tmp_path, llm)
+
+    result = controller.run(_investigation())
+
+    assert result.outcome.status is OutcomeStatus.FAILED
+    assert result.outcome.termination_reason is TerminationReason.VALIDATION_FAILURE
+    assert result.steps == ()
+    assert secret not in repr(result)
+
+
+def test_persistence_failure_emits_a_safe_correlated_event(tmp_path) -> None:
+    class FailingRepository:
+        def save(self, investigation, *, expected_version=None):
+            raise RuntimeError("database password=do-not-log")
+
+    events = []
+    provider = MockTelemetryProvider(tmp_path / "persistence-failure.sqlite3")
+    provider.load_scenario(PROJECT)
+    controller = InvestigationController(
+        FakeLLMProvider([]),
+        ToolRegistry(provider),
+        FailingRepository(),
+        frozenset({PROJECT}),
+        progress_sink=events.append,
+    )
+
+    with pytest.raises(RuntimeError, match="database password"):
+        controller.run(_investigation())
+
+    assert [(event.name, event.investigation_id, event.details) for event in events] == [
+        ("persistence_failed", events[0].investigation_id, {"error_code": "PERSISTENCE_ERROR", "terminal": False})
+    ]
+
+
 def test_contradictory_evidence_remains_partially_supported(tmp_path) -> None:
     project = "scenario_contradictory_evidence"
 
@@ -187,6 +236,109 @@ def test_contradictory_evidence_remains_partially_supported(tmp_path) -> None:
     assert len(result.observations) == 2
     assert result.findings[0].support_level.value == "PARTIALLY_SUPPORTED"
     assert len(result.findings[0].evidence) == 2
+
+
+def test_cpu_saturation_scenario_preserves_coincidence_without_unsupported_causation(tmp_path) -> None:
+    def conclusion(context):
+        observations = context["evidence"]["observations"]
+        return _action(
+            ToolName.CONCLUDE_INVESTIGATION,
+            {"findings": [{"statement": "Elevated CPU coincided with higher latency during increased traffic.", "evidence": [
+                {"evidence_id": observation["evidence_id"]} for observation in observations
+            ]}]},
+        )
+
+    llm = FakeLLMProvider([
+        _metric_query("example.googleapis.com/request_count", labels={"route": "/charge"}),
+        _query(),
+        _metric_query("example.googleapis.com/request_latency", labels={"route": "/charge"}),
+        _metric_query("example.googleapis.com/memory_utilization", labels={"route": "/charge"}),
+        conclusion,
+    ])
+    controller, _ = _controller(tmp_path, llm)
+
+    result = controller.run(_investigation())
+
+    assert result.outcome.status is OutcomeStatus.COMPLETED
+    assert len(result.observations) == 4
+    assert result.findings[0].causal_claim is False
+    assert result.findings[0].support_level.value == "SUPPORTED"
+
+
+def test_traffic_surge_scenario_records_traffic_cpu_and_latency(tmp_path) -> None:
+    project = "scenario_traffic_surge"
+
+    def conclusion(context):
+        return _action(
+            ToolName.CONCLUDE_INVESTIGATION,
+            {"findings": [{"statement": "Traffic, CPU, and latency increased together.", "evidence": [
+                {"evidence_id": observation["evidence_id"]} for observation in context["evidence"]["observations"]
+            ]}]},
+        )
+
+    llm = FakeLLMProvider([
+        _metric_query("example.googleapis.com/request_count", labels={"route": "/charge"}),
+        _query(),
+        _metric_query("example.googleapis.com/request_latency", labels={"route": "/charge"}),
+        conclusion,
+    ])
+    controller, _ = _controller(tmp_path, llm, project=project)
+
+    result = controller.run(_investigation(project))
+
+    assert result.outcome.status is OutcomeStatus.COMPLETED
+    assert {str(observation.metric_type) for observation in result.observations} == {
+        "example.googleapis.com/request_count",
+        "example.googleapis.com/cpu_utilization",
+        "example.googleapis.com/request_latency",
+    }
+    assert result.findings[0].causal_claim is False
+
+
+def test_latency_without_cpu_scenario_does_not_support_a_cpu_finding(tmp_path) -> None:
+    project = "scenario_latency_without_cpu"
+
+    def conclusion(context):
+        cpu_observation = next(
+            observation for observation in context["evidence"]["observations"]
+            if observation["metric_type"] == "example.googleapis.com/cpu_utilization"
+        )
+        return _action(
+            ToolName.CONCLUDE_INVESTIGATION,
+            {"hypotheses": [{"statement": "CPU pressure is weakened by stable CPU telemetry.", "status": "WEAKENED", "evidence": [{"evidence_id": cpu_observation["evidence_id"]}]}]},
+        )
+
+    llm = FakeLLMProvider([
+        _metric_query("example.googleapis.com/request_latency", labels={"route": "/charge"}),
+        _query(),
+        _metric_query("example.googleapis.com/memory_utilization", labels={"route": "/charge"}),
+        conclusion,
+    ])
+    controller, _ = _controller(tmp_path, llm, project=project)
+
+    result = controller.run(_investigation(project))
+
+    assert result.outcome.status is OutcomeStatus.INSUFFICIENT_EVIDENCE
+    assert result.findings == ()
+    assert result.hypotheses[0].status.value == "WEAKENED"
+
+
+def test_missing_data_scenario_preserves_no_data_and_returns_insufficient_evidence(tmp_path) -> None:
+    project = "scenario_missing_data"
+    llm = FakeLLMProvider([
+        _metric_query("example.googleapis.com/request_latency", labels={"route": "/charge"}),
+        _query(),
+        _metric_query("example.googleapis.com/memory_utilization", labels={"route": "/charge"}),
+        _action(ToolName.CONCLUDE_INVESTIGATION, {"unresolved_questions": ["CPU and memory telemetry were unavailable."]}),
+    ])
+    controller, _ = _controller(tmp_path, llm, project=project)
+
+    result = controller.run(_investigation(project))
+
+    assert result.outcome.status is OutcomeStatus.INSUFFICIENT_EVIDENCE
+    assert [step.tool_result.status.value for step in result.steps[:3]] == ["success", "no_data", "no_data"]
+    assert len(result.observations) == 1
+    assert result.observations[0].numeric_value != 0
 
 
 def test_context_builder_is_state_synced_bounded_and_excludes_raw_provenance() -> None:

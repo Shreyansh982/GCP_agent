@@ -336,7 +336,30 @@ Do not place investigation execution state in Streamlit process-local state.
 
 Write presentation security tests.
 
+## M8.5 — Phase 1 Acceptance Remediation
+
+Close only the gaps that currently prevent the documented Phase 1 acceptance gate from being verified. Keep the modular-monolith, provider, domain, evidence, lifecycle, and security boundaries established in M0-M8.
+
+Implementation work:
+
+* add one configuration-backed Phase 1 request-policy source for the following defaults: maximum investigation-question length of 4,000 characters, maximum serialized tool-request/payload size of 32 KiB, maximum label/filter-map cardinality of 50 entries per map, and maximum alert/resource collection size of 100 items before materialization;
+* enforce the 4,000-character question limit in `InvestigationApplicationService` so non-Streamlit callers receive the same limit as the existing UI;
+* validate payload size and label/filter cardinality before provider execution, and bound alert/resource collections before they become unbounded tool results; retain existing structured errors, result metadata, and authorization behavior;
+* add the Phase 1 observability minimum using the existing application logging path only: basic low-cardinality counters/timers, investigation/step-correlated tool tracing, SQLite persistence success/failure visibility, and Gemini usage logging when the provider exposes usage. Do not add external telemetry infrastructure, dashboards, queues, or new domain state.
+
+Fixture and test work:
+
+* add deterministic Traffic Surge fixture coverage and complete deterministic FakeLLM scenario coverage for CPU Saturation, Traffic Surge, Latency Without CPU, and Missing Data. Assert the documented structured outcomes, including no unsupported causation, no CPU support when CPU is stable, and insufficient evidence when required telemetry is unavailable;
+* retain and run the existing contradictory-evidence, tool-limit, duration-limit, LLM-failure, invalid-conclusion, and duplicate-replay scenarios as the remaining core-scenario coverage;
+* add the Credential Exfiltration Attempt security scenario, proving that an attempted secret request cannot access credentials, invoke an unregistered capability, enter investigation context, or produce a secret-bearing response;
+* add deterministic resource-exhaustion tests for all four approved limits, including pre-provider rejection/bounded processing, structured warnings/errors, and retention of applicable existing result metadata;
+* add observability tests for identifier propagation, tool-event correlation, safe error categories, redaction, persistence-failure visibility, counter/timer updates, truncated-result visibility, authorization-failure recording, and Gemini usage logging where supplied by the fake provider.
+
+Run the remediation tests together with the existing full deterministic regression suite. Standard tests must continue to use FakeLLM, MockTelemetryProvider, and SQLite; they must not require live GCP access or paid LLM calls.
+
 ## M9 — Phase 1 Acceptance
+
+Prerequisite: M8.5 must be complete and verified.
 
 Run the full suite:
 
@@ -433,7 +456,7 @@ Do not automatically continue into the next milestone.
 
 # CURRENT IMPLEMENTATION STATE
 
-Previous milestone achieved: M8
+Previous milestone achieved: M8.5
 Current milestone: M9
 Status: NOT STARTED
 

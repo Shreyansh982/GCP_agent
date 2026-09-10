@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass
 
 from gcp_observability_agent.application.common.events import ProgressSink
-from gcp_observability_agent.application.common.observability import ProgressObserver, StructuredLogger
+from gcp_observability_agent.application.common.observability import OperationalMetrics, ProgressObserver, StructuredLogger
 from gcp_observability_agent.application.investigations.controller import (
     ContextBuilder,
     ContextPolicy,
@@ -27,6 +27,7 @@ class PhaseOneContainer:
     application_service: InvestigationApplicationService
     telemetry_provider: MockTelemetryProvider
     repository: SQLiteInvestigationRepository
+    metrics: OperationalMetrics
 
 
 def build_phase_one_container(
@@ -40,13 +41,21 @@ def build_phase_one_container(
     logger = logging.getLogger("gcp_observability_agent")
     logger.setLevel(resolved.log_level)
     structured_logger = StructuredLogger(logger)
+    metrics = OperationalMetrics()
     telemetry_provider = MockTelemetryProvider(resolved.database_path)
     if resolved.mock_scenario:
         telemetry_provider.load_scenario(resolved.mock_scenario)
     repository = SQLiteInvestigationRepository(resolved.database_path)
     tools = ToolRegistry(
         telemetry_provider,
-        ToolPolicy(resolved.max_tool_actions, resolved.max_result_items, resolved.max_query_interval),
+        ToolPolicy(
+            resolved.max_tool_actions,
+            resolved.max_result_items,
+            resolved.max_query_interval,
+            resolved.max_tool_request_payload_bytes,
+            resolved.max_label_filter_entries,
+            resolved.max_collection_items,
+        ),
     )
     controller = InvestigationController(
         llm,
@@ -60,10 +69,15 @@ def build_phase_one_container(
             resolved.max_llm_retries,
             resolved.max_tool_retries,
         ),
-        progress_sink=ProgressObserver(structured_logger, progress_sink),
+        progress_sink=ProgressObserver(structured_logger, progress_sink, metrics),
     )
     return PhaseOneContainer(
-        InvestigationApplicationService(controller, structured_logger), telemetry_provider, repository
+        InvestigationApplicationService(
+            controller, structured_logger, max_question_length=resolved.max_investigation_question_length
+        ),
+        telemetry_provider,
+        repository,
+        metrics,
     )
 
 

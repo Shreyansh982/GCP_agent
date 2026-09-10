@@ -86,6 +86,19 @@ def test_alert_retrieval_and_scenario_loading_are_deterministic(provider, tmp_pa
     assert "scenario_missing_data" in SCENARIOS
 
 
+def test_traffic_surge_fixture_is_available_and_contains_the_expected_metrics(tmp_path) -> None:
+    provider = MockTelemetryProvider(tmp_path / "traffic.sqlite3")
+    provider.load_scenario("scenario_traffic_surge")
+
+    metrics = provider.search_metric_descriptors({"resource_type": "cloud_run_revision"})
+
+    assert {metric.metric_type.value for metric in metrics} >= {
+        "example.googleapis.com/request_count",
+        "example.googleapis.com/cpu_utilization",
+        "example.googleapis.com/request_latency",
+    }
+
+
 def test_invalid_aggregation_is_explicit(provider) -> None:
     request = {
         "project_id": PROJECT,
@@ -98,4 +111,3 @@ def test_invalid_aggregation_is_explicit(provider) -> None:
 
     with pytest.raises(ValueError, match="requires alignment"):
         provider.query_metric(request)
-

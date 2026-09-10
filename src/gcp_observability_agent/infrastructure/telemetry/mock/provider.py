@@ -79,6 +79,10 @@ class MockTelemetryProvider:
             sql += " AND EXISTS (SELECT 1 FROM resource_labels rl WHERE rl.resource_id = monitored_resources.resource_id AND rl.label_key = ? AND rl.label_value = ?)"
             parameters.extend((key, str(value)))
         sql += " ORDER BY resource_id"
+        collection_limit = request.get("_collection_limit")
+        if isinstance(collection_limit, int) and collection_limit > 0:
+            sql += " LIMIT ?"
+            parameters.append(collection_limit)
         with connect(self._database_path) as connection:
             return tuple(self._resource(connection, row) for row in connection.execute(sql, parameters))
 
@@ -141,6 +145,10 @@ class MockTelemetryProvider:
         if severity:
             sql += f" AND severity IN ({','.join('?' for _ in severity)})"
             parameters.extend(sorted(severity))
+        collection_limit = request.get("_collection_limit")
+        if isinstance(collection_limit, int) and collection_limit > 0:
+            sql += " LIMIT ?"
+            parameters.append(collection_limit)
         with connect(self._database_path) as connection:
             alerts: list[Alert] = []
             for row in connection.execute(sql, parameters):

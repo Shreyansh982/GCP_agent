@@ -27,9 +27,16 @@ class InvestigationSubmission:
 class InvestigationApplicationService:
     """Creates an aggregate and delegates bounded execution to the controller."""
 
-    def __init__(self, controller: InvestigationController, logger: StructuredLogger | None = None) -> None:
+    def __init__(
+        self,
+        controller: InvestigationController,
+        logger: StructuredLogger | None = None,
+        *,
+        max_question_length: int = 4_000,
+    ) -> None:
         self._controller = controller
         self._logger = logger or StructuredLogger()
+        self._max_question_length = max_question_length
 
     def investigate(
         self,
@@ -37,6 +44,8 @@ class InvestigationApplicationService:
         scope: InvestigationScope,
         temporal_context: TemporalContext,
     ) -> Investigation:
+        if len(question) > self._max_question_length:
+            raise ValueError(f"question must not exceed {self._max_question_length} characters")
         investigation = Investigation.create(question, scope, temporal_context)
         self._logger.info("investigation_submitted", investigation_id=str(investigation.investigation_id))
         result = self._controller.run(investigation)

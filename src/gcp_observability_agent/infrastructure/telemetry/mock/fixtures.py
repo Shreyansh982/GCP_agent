@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 
 SCENARIOS = frozenset({
     "scenario_cpu_saturation",
+    "scenario_traffic_surge",
     "scenario_latency_without_cpu",
     "scenario_missing_data",
     "scenario_contradictory_evidence",
@@ -119,6 +120,12 @@ def _scenario_metrics(scenario_id: str) -> dict[str, dict[str, tuple[float, ...]
         return {
             "example.googleapis.com/request_latency": {resource: latency for resource in resources},
             "example.googleapis.com/cpu_utilization": {resources[0]: high_cpu, resources[1]: normal_cpu},
+        }
+    if scenario_id == "scenario_traffic_surge":
+        return {
+            "example.googleapis.com/request_latency": {resources[0]: latency},
+            "example.googleapis.com/request_count": {resources[0]: traffic},
+            "example.googleapis.com/cpu_utilization": {resources[0]: high_cpu},
         }
     return {
         "example.googleapis.com/request_latency": {resources[0]: latency},

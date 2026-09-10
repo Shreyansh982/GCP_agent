@@ -168,10 +168,10 @@ class InvestigationController:
     def run(self, investigation: Investigation) -> Investigation:
         if investigation.status is InvestigationStatus.TERMINAL:
             return investigation
-        version = self._repository.save(investigation)
+        version = self._save(investigation)
         if investigation.status is InvestigationStatus.CREATED:
             investigation.start()
-            version = self._repository.save(investigation, expected_version=version)
+            version = self._save(investigation, expected_version=version)
             self._emit("investigation_started", investigation)
 
         started_at = self._clock()
@@ -204,10 +204,11 @@ class InvestigationController:
                 ),
             )
             investigation.complete_step(completed)
-            version = self._repository.save(investigation, expected_version=version)
+            version = self._save(investigation, expected_version=version)
             self._emit(
                 "tool_completed", investigation, step_id=str(step.step_id), tool_name=action.tool_name.value,
                 status=response.status.value, error_code=response.error.code if response.error else None,
+                truncated=bool(response.data.get("result_metadata", {}).get("truncated", False)),
             )
             evidence_created = len(investigation.observations) - observation_count
             if evidence_created:
@@ -224,7 +225,9 @@ class InvestigationController:
         context = self._context_builder.build(investigation, remaining_actions=self._policy.max_actions - len(investigation.steps))
         for attempt in range(self._policy.max_llm_retries + 1):
             try:
-                return self._llm.next_action(context)
+                action = self._llm.next_action(context)
+                self._emit_llm_usage(investigation)
+                return action
             except TimeoutError:
                 if attempt == self._policy.max_llm_retries:
                     return _LLMFailure()
@@ -287,7 +290,7 @@ class InvestigationController:
         return self._persist_terminal(investigation, version)
 
     def _persist_terminal(self, investigation: Investigation, version: int) -> Investigation:
-        self._repository.save(investigation, expected_version=version)
+        self._save(investigation, expected_version=version)
         assert investigation.outcome is not None
         event_name = (
             "investigation_concluded"
@@ -301,6 +304,36 @@ class InvestigationController:
             termination_reason=investigation.outcome.termination_reason.value,
         )
         return investigation
+
+    def _save(self, investigation: Investigation, *, expected_version: int | None = None) -> int:
+        try:
+            version = self._repository.save(investigation, expected_version=expected_version)
+        except Exception:
+            self._emit(
+                "persistence_failed",
+                investigation,
+                error_code="PERSISTENCE_ERROR",
+                terminal=investigation.status is InvestigationStatus.TERMINAL,
+            )
+            raise
+        self._emit(
+            "persistence_succeeded",
+            investigation,
+            terminal=investigation.status is InvestigationStatus.TERMINAL,
+        )
+        return version
+
+    def _emit_llm_usage(self, investigation: Investigation) -> None:
+        usage = getattr(self._llm, "last_usage", None)
+        if usage is None:
+            return
+        fields = {
+            name: value
+            for name in ("input_tokens", "output_tokens", "total_tokens", "cached_input_tokens")
+            if isinstance((value := getattr(usage, name, None)), int) and not isinstance(value, bool)
+        }
+        if fields:
+            self._emit("llm_usage_recorded", investigation, **fields)
 
     def _emit(self, name: str, investigation: Investigation, *, step_id: str | None = None, **details: object) -> None:
         if self._progress_sink is None:
