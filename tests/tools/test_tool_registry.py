@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from gcp_observability_agent.infrastructure.persistence.sqlite.database import connect, transaction
+from gcp_observability_agent.application.investigations.controller import ContextBuilder
 from gcp_observability_agent.application.investigations.tools import (
     RetryClassification,
     ToolExecutionContext,
@@ -137,6 +138,35 @@ def test_cross_project_and_oversized_scope_are_rejected_before_provider_executio
     assert provider.calls == {"search": 0, "query": 0, "resources": 0, "alerts": 0}
 
 
+def test_telemetry_authorization_requires_an_authorized_effective_project_before_provider_execution(tmp_path) -> None:
+    base = MockTelemetryProvider(tmp_path / "telemetry.sqlite3")
+    base.load_scenario(PROJECT)
+    provider = CountingProvider(base)
+    registry = ToolRegistry(provider)
+    interval = TimeInterval(datetime(2026, 8, 27, 14, tzinfo=UTC), datetime(2026, 8, 27, 15, tzinfo=UTC))
+    unscoped = Investigation.create(
+        "Why did payments become slow?", InvestigationScope(),
+        TemporalContext(reference_time=interval.end_time, resolved_interval=interval),
+    )
+    unscoped.start()
+    context = ToolExecutionContext(unscoped, frozenset({PROJECT}))
+
+    authorized = registry.execute(_query(project_id=PROJECT), context)
+    missing_project = registry.execute(_query("missing-project"), context)
+    rejected_requests = [
+        {"request_id": "cross-search", "tool_name": "search_metric_descriptors", "arguments": {"query": "cpu", "project_id": "other-project"}},
+        _query("cross-query", project_id="other-project"),
+        {"request_id": "cross-resources", "tool_name": "list_resources", "arguments": {"project_id": "other-project"}},
+        {"request_id": "cross-alerts", "tool_name": "get_alerts", "arguments": {"project_id": "other-project", "interval": INTERVAL}},
+    ]
+    rejected = [registry.execute(request, context) for request in rejected_requests]
+
+    assert authorized.status is ToolResultStatus.SUCCESS
+    assert missing_project.error.code == "PROJECT_NOT_AUTHORIZED"
+    assert all(response.error.code == "PROJECT_NOT_AUTHORIZED" for response in rejected)
+    assert provider.calls == {"search": 1, "query": 1, "resources": 0, "alerts": 0}
+
+
 def test_malformed_and_unregistered_executable_requests_cannot_reach_provider(tmp_path) -> None:
     base = MockTelemetryProvider(tmp_path / "telemetry.sqlite3")
     base.load_scenario(PROJECT)
@@ -231,6 +261,26 @@ def test_result_processing_creates_stable_evidence_and_replay_does_not_create_mo
     assert replay.data["observations"][0]["observation_id"] == observation_id
     assert len(investigation.observations) == 1
     assert observation_id in investigation.evidence_ids
+
+
+def test_query_metric_preserves_timestamped_signal_and_records_deterministic_analyses(tmp_path) -> None:
+    provider = MockTelemetryProvider(tmp_path / "telemetry.sqlite3")
+    provider.load_scenario(PROJECT)
+    investigation = _investigation()
+
+    response = ToolRegistry(provider).execute(_query(), _context(investigation))
+    observation = response.data["observations"][0]
+    context = ContextBuilder().build(investigation, remaining_actions=11)
+
+    assert [point["value"] for point in observation["time_series"]["points"]] == [40.0, 45.0, 91.0, 94.0]
+    assert observation["value"] == 94.0
+    assert {(analysis["operation"], analysis["result"]) for analysis in response.data["analyses"]} >= {
+        ("minimum", 40.0), ("maximum", 94.0), ("mean", 67.5), ("trend_direction", "INCREASING"),
+    }
+    assert response.data["result_metadata"]["transformed"] is True
+    assert "timestamped points" in response.data["result_metadata"]["transformation_summary"]
+    assert [point["value"] for point in context["evidence"]["observations"][0]["time_series"]] == [40.0, 45.0, 91.0, 94.0]
+    assert any(analysis["operation"] == "maximum" and analysis["result"] == 94.0 for analysis in context["evidence"]["analyses"])
 
 
 def test_missing_data_is_not_zero_and_provider_failures_are_distinct(tmp_path) -> None:

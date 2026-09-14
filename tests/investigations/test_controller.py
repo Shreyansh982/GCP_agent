@@ -12,9 +12,9 @@ from gcp_observability_agent.application.investigations.controller import (
 )
 from gcp_observability_agent.application.investigations.fake_llm import FakeLLMProvider
 from gcp_observability_agent.application.investigations.tools import ToolRegistry
-from gcp_observability_agent.domain.common.ids import ObservationId, ToolRequestId
+from gcp_observability_agent.domain.common.ids import FindingId, HypothesisId, ObservationId, ToolRequestId
 from gcp_observability_agent.domain.common.time import TimeInterval
-from gcp_observability_agent.domain.evidence.models import Observation
+from gcp_observability_agent.domain.evidence.models import EvidenceReference, Finding, Hypothesis, HypothesisStatus, Observation
 from gcp_observability_agent.domain.investigation.models import (
     Investigation,
     InvestigationScope,
@@ -78,6 +78,24 @@ def _conclusion_from_context(context):
     )
 
 
+def _running_investigation_with_accumulated_state() -> Investigation:
+    investigation = _investigation()
+    investigation.start()
+    observation = Observation(
+        ObservationId.new(), investigation.investigation_id, "CPU was elevated during the observed interval.",
+        interval=investigation.temporal_context.resolved_interval, numeric_value=91.0,
+    )
+    investigation.record_observation(observation)
+    references = (EvidenceReference(observation.evidence_id),)
+    investigation.record_hypothesis(
+        Hypothesis(HypothesisId.new(), investigation.investigation_id, "CPU pressure may have contributed.", references, HypothesisStatus.UNRESOLVED)
+    )
+    investigation.record_finding(
+        Finding(FindingId.new(), investigation.investigation_id, "CPU was elevated during the observed interval.", references)
+    )
+    return investigation
+
+
 def test_controller_owns_a_bounded_loop_and_persists_a_supported_conclusion(tmp_path) -> None:
     llm = FakeLLMProvider([
         _action(ToolName.SEARCH_METRIC_DESCRIPTORS, {"query": "cpu"}),
@@ -130,6 +148,42 @@ def test_action_limit_produces_partial_terminal_outcome_without_requesting_more_
     assert result.outcome.termination_reason is TerminationReason.MAX_TOOL_CALLS
     assert len(result.steps) == 3
     assert len(llm.contexts) == 3
+
+
+def test_partial_terminal_outcome_retains_accumulated_state_and_persists_a_useful_summary(tmp_path) -> None:
+    controller, repository = _controller(tmp_path, FakeLLMProvider([]), policy=ControllerPolicy(max_actions=0))
+
+    result = controller.run(_running_investigation_with_accumulated_state())
+    persisted = repository.get(result.investigation_id)
+
+    assert result.outcome.status is OutcomeStatus.PARTIAL
+    assert result.outcome.termination_reason is TerminationReason.MAX_TOOL_CALLS
+    assert "1 observation(s)" in result.outcome.response_summary
+    assert result.outcome.unresolved_questions == (result.question,)
+    assert len(result.observations) == len(result.hypotheses) == len(result.findings) == 1
+    assert persisted is not None
+    assert persisted.outcome == result.outcome
+    assert persisted.findings == result.findings
+    assert persisted.hypotheses == result.hypotheses
+
+
+def test_failed_terminal_outcome_retains_accumulated_state_and_persists_a_useful_summary(tmp_path) -> None:
+    controller, repository = _controller(
+        tmp_path, FakeLLMProvider([TimeoutError()]), policy=ControllerPolicy(max_llm_retries=0)
+    )
+
+    result = controller.run(_running_investigation_with_accumulated_state())
+    persisted = repository.get(result.investigation_id)
+
+    assert result.outcome.status is OutcomeStatus.FAILED
+    assert result.outcome.termination_reason is TerminationReason.LLM_FAILURE
+    assert "1 finding(s) were retained" in result.outcome.response_summary
+    assert result.outcome.unresolved_questions == (result.question,)
+    assert len(result.observations) == len(result.hypotheses) == len(result.findings) == 1
+    assert persisted is not None
+    assert persisted.outcome == result.outcome
+    assert persisted.findings == result.findings
+    assert persisted.hypotheses == result.hypotheses
 
 
 def test_llm_timeout_is_bounded_then_preserved_as_a_failed_investigation(tmp_path) -> None:

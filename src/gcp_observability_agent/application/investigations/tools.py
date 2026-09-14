@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from gcp_observability_agent.domain.common.ids import InvestigationStepId, ObservationId
+from gcp_observability_agent.domain.common.ids import AnalysisId, InvestigationStepId, ObservationId
 from gcp_observability_agent.domain.common.time import TimeInterval
 from gcp_observability_agent.domain.evidence.models import (
     EvidenceReference,
@@ -18,9 +18,10 @@ from gcp_observability_agent.domain.evidence.models import (
     Finding,
     Hypothesis,
     HypothesisStatus,
+    DeterministicAnalysis,
     Observation,
 )
-from gcp_observability_agent.domain.investigation.analysis import mean, trend_direction
+from gcp_observability_agent.domain.investigation.analysis import maximum, mean, minimum, trend_direction
 from gcp_observability_agent.domain.investigation.models import (
     Investigation,
     InvestigationStatus,
@@ -293,10 +294,14 @@ class ToolRegistry:
         return models[request.tool_name].model_validate(request.arguments)  # type: ignore[return-value]
 
     def _authorize(self, request: ToolRequestEnvelope, arguments: ArgumentsModel, context: ToolExecutionContext) -> ToolResponse | None:
+        if request.tool_name is ToolName.CONCLUDE_INVESTIGATION:
+            return None
         requested_project = getattr(arguments, "project_id", None)
         scope_project = context.investigation.scope.project_id
         project = requested_project or (str(scope_project) if scope_project else None)
-        if project and project not in context.allowed_projects:
+        if project is None:
+            return self._error(request, ToolResultStatus.POLICY_REJECTED, "PROJECT_NOT_AUTHORIZED", "An authorized project scope is required for telemetry access.")
+        if project not in context.allowed_projects:
             return self._error(request, ToolResultStatus.POLICY_REJECTED, "PROJECT_NOT_AUTHORIZED", "The requested project is outside the authorized scope.")
         if scope_project and project and project != str(scope_project):
             return self._error(request, ToolResultStatus.POLICY_REJECTED, "PROJECT_SCOPE_MISMATCH", "The requested project does not match the investigation scope.")
@@ -381,7 +386,15 @@ class ToolRegistry:
         items = list(series)
         returned, metadata = self._bounded(items)
         observations = [self._record_series_observation(item, investigation, step_id) for item in returned]
-        data = {"observations": observations, "summary": {"series_count": len(items), "point_count": sum(len(item.points) for item in items)}, "result_metadata": metadata}
+        analyses = [self._analysis(item) for item in investigation.analyses if item.step_id == step_id]
+        metadata.update({
+            "transformed": bool(observations),
+            "transformation_summary": (
+                "Time series are preserved as timestamped points; deterministic statistics are recorded separately."
+                if observations else None
+            ),
+        })
+        data = {"observations": observations, "analyses": analyses, "summary": {"series_count": len(items), "point_count": sum(len(item.points) for item in items)}, "result_metadata": metadata}
         return self._result(request, ToolResultStatus.SUCCESS if observations else ToolResultStatus.NO_DATA, data, warnings=("No observations matched the requested scope and time interval.",) if not observations else ())
 
     def _alerts_result(self, request: ToolRequestEnvelope, alerts: Any, investigation: Investigation, step_id: InvestigationStepId | None, *, collection_bounded: bool = False) -> ToolResponse:
@@ -409,21 +422,64 @@ class ToolRegistry:
 
     def _record_series_observation(self, series: TimeSeries, investigation: Investigation, step_id: InvestigationStepId | None) -> dict[str, object]:
         numeric_values = [float(point.value) for point in series.points if isinstance(point.value, (int, float)) and not isinstance(point.value, bool)]
-        value: float | str = mean(numeric_values) if numeric_values else str(series.points[-1].value)
+        value: float | str = numeric_values[-1] if numeric_values else str(series.points[-1].value)
         start = series.points[0].sort_time
         end = series.points[-1].sort_time + timedelta(microseconds=1)
         interval = TimeInterval(start, end)
         unit = str(series.metric.metadata.get("unit", "")) or None
+        points = [
+            {"timestamp": point.sort_time.isoformat(), "value": point.value}
+            for point in series.points
+        ]
         observation = Observation(
             ObservationId.new(), investigation.investigation_id,
             f"Observed {series.metric.metric_type} on {series.resource.resource_id} across {len(series.points)} point(s).",
             step_id=step_id,
             metric_type=series.metric.metric_type, resource_id=series.resource.resource_id, interval=interval,
             numeric_value=value, unit=unit,
-            provenance={"source": "telemetry", "metric_labels": dict(series.metric.labels.values), "resource_labels": dict(series.resource.labels.values), "point_count": len(series.points), "minimum": min(numeric_values) if numeric_values else None, "maximum": max(numeric_values) if numeric_values else None, "trend": trend_direction(numeric_values) if len(numeric_values) > 1 else None},
+            provenance={"source": "telemetry", "metric_labels": dict(series.metric.labels.values), "resource_labels": dict(series.resource.labels.values), "time_series": points},
         )
         investigation.record_observation(observation)
-        return {"observation_id": observation.evidence_id, "metric": {"type": str(series.metric.metric_type), "labels": dict(series.metric.labels.values)}, "resource": self._resource(series.resource), "value": value, "unit": unit, "interval": {"start_time": interval.start_time.isoformat(), "end_time": interval.end_time.isoformat()}}
+        analyses = self._record_series_analyses(observation, numeric_values, investigation, step_id, unit)
+        return {
+            "observation_id": observation.evidence_id,
+            "metric": {"type": str(series.metric.metric_type), "labels": dict(series.metric.labels.values)},
+            "resource": self._resource(series.resource),
+            "value": value,
+            "unit": unit,
+            "interval": {"start_time": interval.start_time.isoformat(), "end_time": interval.end_time.isoformat()},
+            "time_series": {"points": points},
+            "analysis_ids": [analysis.evidence_id for analysis in analyses],
+        }
+
+    @staticmethod
+    def _record_series_analyses(
+        observation: Observation,
+        values: list[float],
+        investigation: Investigation,
+        step_id: InvestigationStepId | None,
+        unit: str | None,
+    ) -> tuple[DeterministicAnalysis, ...]:
+        if not values:
+            return ()
+        calculations: list[tuple[str, float | str]] = [
+            ("minimum", minimum(values)),
+            ("maximum", maximum(values)),
+            ("mean", mean(values)),
+        ]
+        if len(values) > 1:
+            calculations.append(("trend_direction", trend_direction(values).value))
+        analyses = tuple(
+            DeterministicAnalysis(
+                AnalysisId.new(), investigation.investigation_id, operation, (observation.evidence_id,), result,
+                step_id=step_id, parameters={"point_count": len(values)}, unit=unit,
+                provenance={"source": "telemetry", "observation_id": observation.evidence_id},
+            )
+            for operation, result in calculations
+        )
+        for analysis in analyses:
+            investigation.record_analysis(analysis)
+        return analyses
 
     def _record_alert_observation(self, alert: Alert, investigation: Investigation, step_id: InvestigationStepId | None) -> dict[str, object]:
         end = alert.end_time or alert.start_time + timedelta(microseconds=1)
@@ -460,6 +516,16 @@ class ToolRegistry:
     @staticmethod
     def _resource(resource: MonitoredResource) -> dict[str, object]:
         return {"resource_id": str(resource.resource_id), "type": str(resource.resource_type), "project_id": str(resource.project_id), "labels": dict(resource.labels.values)}
+
+    @staticmethod
+    def _analysis(analysis: DeterministicAnalysis) -> dict[str, object]:
+        return {
+            "analysis_id": analysis.evidence_id,
+            "operation": analysis.operation,
+            "input_evidence_ids": list(analysis.input_evidence_ids),
+            "result": analysis.result,
+            "unit": analysis.unit,
+        }
 
     @staticmethod
     def _references(values: tuple[EvidenceReferenceArguments, ...]) -> tuple[EvidenceReference, ...]:

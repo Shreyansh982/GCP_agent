@@ -111,6 +111,7 @@ class ContextBuilder:
             "numeric_value": item.numeric_value,
             "unit": item.unit,
             "interval": ({"start_time": item.interval.start_time.isoformat(), "end_time": item.interval.end_time.isoformat()} if item.interval else None),
+            "time_series": item.provenance.get("time_series"),
         }
 
     @staticmethod
@@ -202,6 +203,9 @@ class InvestigationController:
                 derived_observation_ids=tuple(
                     observation.observation_id for observation in investigation.observations if observation.step_id == step.step_id
                 ),
+                derived_analysis_ids=tuple(
+                    analysis.analysis_id for analysis in investigation.analyses if analysis.step_id == step.step_id
+                ),
             )
             investigation.complete_step(completed)
             version = self._save(investigation, expected_version=version)
@@ -286,7 +290,28 @@ class InvestigationController:
         return Hypothesis(HypothesisId.new(), investigation.investigation_id, candidate.statement, self._references(candidate), candidate.status, candidate.confidence, candidate.significant_evidence_gap, candidate.causal_claim, candidate.temporal_correlation_only)
 
     def _terminate(self, investigation: Investigation, version: int, status: OutcomeStatus, reason: TerminationReason) -> Investigation:
-        investigation.conclude(InvestigationOutcome(status, reason))
+        missing_evidence = tuple(
+            warning
+            for step in investigation.steps
+            if step.tool_result is not None and step.tool_result.status is ToolResultStatus.NO_DATA
+            for warning in step.tool_result.warnings
+        )
+        retained_state = (
+            f"{len(investigation.observations)} observation(s), "
+            f"{len(investigation.analyses)} deterministic analysis result(s), "
+            f"{len(investigation.hypotheses)} hypothesis/hypotheses, and "
+            f"{len(investigation.findings)} finding(s) were retained."
+        )
+        summary = f"Investigation {status.value.lower()} due to {reason.value}. {retained_state}"
+        investigation.conclude(
+            InvestigationOutcome(
+                status,
+                reason,
+                summary,
+                (investigation.question,),
+                tuple(dict.fromkeys(missing_evidence)),
+            )
+        )
         return self._persist_terminal(investigation, version)
 
     def _persist_terminal(self, investigation: Investigation, version: int) -> Investigation:

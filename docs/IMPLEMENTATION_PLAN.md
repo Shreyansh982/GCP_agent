@@ -454,9 +454,35 @@ Then stop at the milestone boundary.
 
 Do not automatically continue into the next milestone.
 
+# PHASE 1.1 CORRECTIVE REMEDIATION
+
+Verified after the Phase 1 acceptance milestone:
+
+* Authorization was not deny-by-default: a telemetry request with neither an explicit project nor an investigation project scope could reach a provider. Telemetry tools now require an effective project in `allowed_projects`; `conclude_investigation` remains a local validation action.
+* `query_metric` collapsed each numeric series to a mean before it entered investigation state and context. Timestamped points are now retained in the observation representation, with explicit transformation metadata and recorded minimum, maximum, mean, and trend analyses.
+* Partial and failed terminal outcomes discarded their response summary, unresolved questions, and known missing-evidence warnings even though the aggregate and repository retained evidence. Terminal outcomes now report the reason, retained-state counts, the unanswered original question, and NO_DATA warnings while preserving the existing evidence, hypotheses, and findings unchanged.
+* Deterministic analysis was a genuine Phase 1 gap, not a Phase 2 boundary. The documented primitives are now used in the telemetry result-processing path when numeric time-series data is available, recorded as reproducible `DeterministicAnalysis` evidence, included in LLM context, and linked to their producing step.
+
+Changed files:
+
+* `src/gcp_observability_agent/application/investigations/tools.py`
+* `src/gcp_observability_agent/application/investigations/controller.py`
+* `tests/tools/test_tool_registry.py`
+* `tests/investigations/test_controller.py`
+
+Validation completed:
+
+* Focused tool and controller tests: 31 passed.
+* Architecture-boundary tests: 75 passed.
+* Full deterministic suite: 157 passed.
+* `git diff --check`: passed.
+* Tests remain restricted to FakeLLM, MockTelemetryProvider, SQLite, and fake Gemini clients; no live GCP or paid Gemini calls were introduced.
+
+Remaining Phase 2-relevant limitation: this correction does not add real GCP integration, broader result-size/replay infrastructure, or any evaluation framework.
+
 # CURRENT IMPLEMENTATION STATE
 
-Previous milestone achieved: M9
+Previous milestone achieved: Phase 1.1 Corrective Remediation
 Current milestone: No further milestone is authorized
 Status: COMPLETE
 
