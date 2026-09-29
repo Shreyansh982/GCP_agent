@@ -24,24 +24,30 @@ Question
   -> validated findings, hypotheses, and outcome are persisted
 ```
 
-The planned telemetry operations are metric-descriptor discovery, metric queries, resource discovery, alert retrieval, and a structured conclusion action. The provider-facing contract is deliberately independent of SQLite and the eventual GCP adapter. Large or incomplete results are meant to be handled explicitly rather than silently treated as complete.
+The telemetry operations are metric-descriptor discovery, metric queries, resource discovery, alert retrieval, and a structured conclusion action. The provider-facing contract is deliberately independent of SQLite and the eventual GCP adapter. Large or incomplete results are handled explicitly rather than silently treated as complete.
 
 ## Current status
 
-The project has completed and verified the foundation, domain, persistence, and mock-telemetry milestones.
+Phase 1 and its Phase 1.1 corrective remediation are complete. Phase 2 is approved: M10, **Evaluation Domain**, is complete, and M11, **Deterministic Evaluation Scenario Harness**, is the current authorized milestone but has not started.
+
+The Phase 2 documentation now defines the evaluation criterion semantics, the
+five-scenario M11 execution catalog, semantic reproducibility rules, and later
+M12-M15 dependencies. Those definitions are specifications only: no scenario
+harness, evaluator, adversarial evaluation suite, hypothesis-history mechanism,
+or evaluation-run persistence has been implemented yet.
 
 Implemented today:
 
-- A provider-independent domain model for investigations, time intervals, telemetry identities, evidence, hypotheses, findings, support levels, and deterministic analysis primitives.
-- Explicit investigation lifecycle rules and application-generated evidence IDs.
-- SQLite migrations for telemetry plus investigation/audit data, with foreign-key enforcement, transactions, optimistic version checks, and append-oriented historical records.
-- A deterministic, SQLite-backed `MockTelemetryProvider` with scenario fixtures for CPU saturation, latency without CPU pressure, missing data, and contradictory evidence.
-- Metric descriptor search, resource discovery, metric time-series queries, supported alignment/reduction, and alert retrieval at the provider layer.
-- Architecture, domain, persistence, and mock-provider test suites.
+- A provider-independent domain model for investigations, time intervals, telemetry identities, evidence, hypotheses, findings, support levels, deterministic analyses, and evaluation-domain concepts.
+- A bounded, single-turn investigation application with registered telemetry and conclusion tools, deterministic validation and authorization, evidence creation, persistence, and controller-owned execution.
+- SQLite-backed telemetry and investigation/audit persistence with foreign keys, transactions, optimistic version checks, and append-oriented historical records.
+- A deterministic, SQLite-backed `MockTelemetryProvider` and scenario fixtures, plus a `FakeLLMProvider` for deterministic automated tests.
+- A Gemini adapter for the real runtime LLM provider and a Streamlit presentation interface.
+- M10 evaluation scenario, criterion, criterion-outcome, result, and classification models. M10 adds no evaluator, deterministic evaluation execution, persistence changes, provider changes, or Streamlit changes.
 
-Not implemented yet: the registered tool layer and its Pydantic contracts, authorization and policy validation, the investigation controller/context builder, a fake or Gemini LLM adapter, the application service, and the Streamlit interface. The repository therefore does not yet provide an end-user investigation command or web application.
+The standard test suite is deterministic and does not require live GCP access or paid Gemini calls. Verified M10 validation recorded 7 focused tests, 79 architecture tests, and 168 full-suite tests.
 
-The current implementation plan places the project at **M4: Tools and Validation**. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for the controlled milestone sequence.
+Not implemented: the M11 scenario harness, an investigation-quality evaluator (M12), adversarial FakeLLM evaluation scenarios (M13), Phase 2 hypothesis/provenance enhancements (M14), evaluation run metadata/reproducibility work (M15), and real GCP telemetry integration. See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for the controlled milestone sequence.
 
 ## Architecture
 
@@ -54,7 +60,7 @@ Presentation  ->  Application  ->  Domain
                            Infrastructure adapters
 ```
 
-The domain contains provider-neutral investigation and observability concepts. Application code is intended to coordinate use cases and enforce policy. Infrastructure implements the boundaries: SQLite currently provides persistence and mock telemetry; future adapters include Google Cloud Monitoring and Gemini. Presentation is reserved for the Phase 1 Streamlit interface.
+The domain contains provider-neutral investigation and observability concepts. Application code coordinates use cases and enforces policy. Infrastructure implements the boundaries: SQLite provides persistence and mock telemetry, Gemini is the runtime LLM adapter, and Google Cloud Monitoring remains a future adapter. Presentation is the Phase 1 Streamlit interface.
 
 This separation is practical rather than ornamental. The domain has no SQLite, Streamlit, GCP SDK, or LLM SDK dependency. The mock telemetry adapter implements the same provider-shaped capabilities intended for a future GCP adapter, while SQLite records an audit trail without becoming the domain model.
 
@@ -71,11 +77,11 @@ This separation is practical rather than ornamental. The domain has no SQLite, S
 
 ```text
 src/gcp_observability_agent/
-  domain/          Investigation, evidence, telemetry value types, and ports
-  infrastructure/  SQLite persistence and mock telemetry implementations
-  application/     Reserved for use-case orchestration
-  presentation/    Reserved for the Streamlit interface
-  bootstrap/       Reserved for composition and runtime wiring
+  domain/          Investigation, evidence, telemetry, evaluation types, and ports
+  application/     Investigation orchestration, tools, and deterministic controls
+  infrastructure/  SQLite, mock telemetry, Gemini, and configuration adapters
+  presentation/    Streamlit interface
+  bootstrap/       Runtime composition and wiring
 
 docs/               Product, architecture, contracts, security, and test design
 tests/              Architecture, domain, persistence, and telemetry tests
@@ -92,10 +98,15 @@ python -m pip install -e ".[dev]"
 python -m pytest
 ```
 
-The standard suite is deterministic: it uses SQLite and checked-in/mock scenario data, and does not require live GCP access or paid LLM calls. The current tests exercise import boundaries, domain invariants, persistence integrity and round trips, and mock-provider behavior.
+The standard suite is deterministic: it uses SQLite, mock scenario data, `FakeLLMProvider`, and fake Gemini clients as applicable; it does not require live GCP access or paid Gemini calls. The tests exercise import boundaries, domain invariants, persistence integrity, provider and tool behavior, controller/application flows, Gemini adapter behavior, and Streamlit security.
 
 ## Direction
 
-The next step is the tools-and-validation milestone: structured request/result schemas, a registered tool set, semantic and scope validation, result-size protection, retry classification, and evidence creation. Later milestones add the controller-driven investigation loop, application wiring, Gemini integration, and Streamlit presentation.
+The current authorized milestone is M11, which will add a deterministic,
+run-isolated harness for executing five documented core evaluation scenarios
+against the existing application/controller stack. It is not yet implemented.
+Planned subsequent milestones are M12 Investigation Evaluator, M13 Adversarial
+FakeLLM Evaluation Suite, M14 Hypothesis Lifecycle and Provenance, and M15
+Evaluation Run Metadata and Reproducibility.
 
 The intended endpoint is not autonomous infrastructure remediation. It is a read-only, bounded investigation system that can help an operator understand what available telemetry establishes - and what it does not.

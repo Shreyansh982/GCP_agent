@@ -2,8 +2,8 @@ Testing Strategy
 
 GCP Observability Investigation Agent
 
-Status: Design Draft
-Derived From: PRD v0.8, DOMAIN_MODEL.md, SYSTEM_ARCHITECTURE.md, TOOL_CONTRACTS v0.3, DATA_MODEL.md, INVESTIGATION_LOGIC.md, AGENT_BEHAVIOUR v0.2, SECURITY_ARCHITECTURE.md
+Status: Authoritative testing strategy; Phase 1 and M10 verified, M11-M15 not started
+Derived From: PRD v0.8, DOMAIN_MODEL.md, SYSTEM_ARCHITECTURE.md, TOOL_CONTRACTS.md, DATA_MODEL.md, INVESTIGATION_LOGIC.md, AGENT_BEHAVIOR.md, SECURITY_ARCHITECTURE.md
 Purpose: Define a practical, deterministic, and layered test strategy that verifies correctness, contracts, security boundaries, investigation behavior, and agent quality without relying on generated prose alone.
 
 Purpose
@@ -684,7 +684,11 @@ Fake LLM returns:
 "findings": [
 {
 "statement": "CPU caused the incident.",
-"supporting_evidence": ["obs-999"]
+"evidence": [
+{"evidence_id": "obs-999", "relationship": "SUPPORTING"}
+],
+"causal_claim": true,
+"temporal_correlation_only": true
 }
 ]
 }
@@ -719,7 +723,7 @@ Agent Scenario Evaluation
 
 Agent scenario tests evaluate the LLM's decisions while keeping the environment deterministic.
 
-The test harness should control:
+The Phase 1 scenario tests and the Phase 2 evaluation harness both control:
 
 mock telemetry
 mock persistence
@@ -728,7 +732,44 @@ LLM model/provider
 temperature/configuration
 scenario fixture
 
-The test evaluates structured outcomes rather than exact prose.
+The test evaluates structured outcomes rather than exact prose. Phase 2 uses
+the catalog, criterion matching, classification, and semantic reproducibility
+rules in IMPLEMENTATION_PLAN.md. A telemetry fixture, an EvaluationScenario,
+and a FakeLLM script are separate test artifacts.
+
+M11 Harness Tests
+
+M11 must test all five enumerated core scenarios and must additionally verify:
+
+catalog uniqueness by scenario_id/version;
+
+missing telemetry fixture rejected before investigation creation;
+
+missing or reused mutable script factory rejected;
+
+invalid criterion selector rejected;
+
+fresh SQLite/provider/repository/FakeLLM state for every run;
+
+terminal Investigation captured in the run record;
+
+controller/application exceptions reported as harness errors rather than
+evaluation classifications;
+
+semantic reproducibility after canonicalizing generated IDs and timestamps.
+
+M12 Evaluator Tests
+
+For every criterion kind, include a passing result and each applicable failure
+classification. Tests must prove that CORRECT is the only passing
+classification, correct missing-data handling passes as CORRECT, and NO_DATA is
+a failure explanation for an unavailable required-evidence criterion.
+
+Query tests must distinguish a successful execution from rejected, retried, and
+replayed activity. Evidence matching must use structural/provenance selectors,
+not runtime UUID literals. Claim tests must use structured causal/evidence-gap
+fields and explicit normalized lexical selectors; an LLM judge is not allowed
+to determine criterion correctness.
 
 Agent Evaluation Dimensions
 
@@ -761,9 +802,9 @@ CPU
 must_not_query:
 unauthorized metric
 
-must_reference:
-obs-001
-analysis-002
+required_evidence:
+latency-elevated
+cpu-maximum-analysis
 
 must_not_claim:
 unsupported causation
@@ -771,6 +812,8 @@ unsupported causation
 max_actions:
 8
 
+These names are scenario-local expectation keys whose metadata defines
+structural evidence or claim selectors. They are not runtime evidence IDs.
 These assertions are more reliable than matching exact natural-language output.
 
 LLM-as-a-Judge
@@ -918,9 +961,10 @@ scenario coverage
 
 A project with 95% line coverage can still have terrible investigation behavior. Humans invented coverage percentages because apparently counting lines was easier than measuring correctness.
 
-Required Phase 1 Test Gate
+Phase 1 Test Gate (Completed)
 
-Before the first real GCP integration, the following must pass:
+The following Phase 1 gate was completed and remains a regression requirement
+before real GCP integration:
 
 all domain invariants
 all controller tests
@@ -1063,12 +1107,9 @@ SYSTEM_ARCHITECTURE.md
 TOOL_CONTRACTS.md
 DATA_MODEL.md
 INVESTIGATION_LOGIC.md
-AGENT_BEHAVIOUR.md
+AGENT_BEHAVIOR.md
 SECURITY_ARCHITECTURE.md
 
-The next implementation-focused documents are:
-
-OBSERVABILITY.md
-GCP_INTEGRATION.md
-
-After those are complete, the design documentation is sufficient to begin implementation in Antigravity with the tests acting as executable constraints.
+Phase 1, Phase 1.1, and M10 are complete. M11 is the current authorized
+milestone and has not started. M11-M15 must follow the controlled sequence in
+IMPLEMENTATION_PLAN.md, with these tests acting as executable constraints.

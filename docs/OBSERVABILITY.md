@@ -1,7 +1,7 @@
 GCP Observability Investigation Agent
 
-Status: Design Draft
-Derived From: PRD v0.8, DOMAIN_MODEL.md, SYSTEM_ARCHITECTURE.md, TOOL_CONTRACTS v0.3, DATA_MODEL.md, INVESTIGATION_LOGIC.md, AGENT_BEHAVIOUR v0.2, SECURITY_ARCHITECTURE.md, TESTING_STRATEGY.md, GCP_INTEGRATION v0.2
+Status: Authoritative design; Phase 1 minimum implemented, production operations and M15 metadata deferred
+Derived From: PRD v0.8, DOMAIN_MODEL.md, SYSTEM_ARCHITECTURE.md, TOOL_CONTRACTS.md, DATA_MODEL.md, INVESTIGATION_LOGIC.md, AGENT_BEHAVIOR.md, SECURITY_ARCHITECTURE.md, TESTING_STRATEGY.md, GCP_INTEGRATION.md
 Purpose: Define how the agent itself is monitored, diagnosed, audited, and measured in development and production.
 
 1. Purpose
@@ -972,7 +972,7 @@ Prefer simple instrumentation in Phase 1.
 
 Introduce distributed telemetry infrastructure when actual operational requirements justify it.
 
-44. Design Suite Completion
+44. Design Suite Authority and Current State
 
 With this document, the core design suite is complete:
 
@@ -982,12 +982,24 @@ SYSTEM_ARCHITECTURE.md   ← component architecture
 TOOL_CONTRACTS.md         ← interaction contracts
 DATA_MODEL.md             ← persistence model
 INVESTIGATION_LOGIC.md    ← deterministic execution
-AGENT_BEHAVIOUR.md        ← LLM behavior
+AGENT_BEHAVIOR.md         ← LLM behavior
 SECURITY_ARCHITECTURE.md  ← security controls
 TESTING_STRATEGY.md       ← verification strategy
 GCP_INTEGRATION.md        ← GCP provider mapping
 OBSERVABILITY.md          ← system observability
 
-The next phase is implementation.
+The repository has implemented Phase 1, Phase 1.1, and M10. The Phase 1
+observability minimum consists of structured application logs, correlated
+progress/tool events, basic low-cardinality counters/timers, persistence
+success/failure visibility, safe error categories, and Gemini usage events when
+the adapter supplies usage. Production dashboards, alert thresholds,
+distributed tracing, and SLO targets remain future deployment work.
 
-Before coding, the repository should include these documents as the engineering source of truth. Implementation decisions may refine them, but material contradictions must be resolved explicitly rather than silently introduced.
+M11 is the current authorized milestone and is not started. M15 owns persisted
+evaluation-run metadata, including provider/model and prompt or scripted-
+behavior identity. Operational last-call usage metadata remains optional and is
+not a substitute for M15 reproducibility records.
+
+These documents remain the engineering source of truth. Implementation may
+refine implementation-level details, but material contract or semantic changes
+must be documented explicitly rather than introduced silently.

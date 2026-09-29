@@ -2,7 +2,7 @@ Domain Model
 
 GCP Observability Investigation Agent
 
-Status: Design Draft
+Status: Authoritative domain design; implemented through M10, with M14 lifecycle/history work deferred
 Derived From: PRD v0.8
 Purpose: Define the stable domain concepts, relationships, invariants, and responsibilities of the investigation system independently of UI, database, LLM provider, and telemetry-provider implementations.
 
@@ -595,12 +595,11 @@ Represents a possible explanation that has not been established as fact.
 Hypothesis
 ├── hypothesis_id
 ├── statement
-├── supporting_evidence
-├── contradicting_evidence
+├── evidence[] with SUPPORTING / CONTRADICTING relationship
 ├── confidence
 └── status
 
-Possible statuses may include:
+The approved hypothesis statuses are:
 
 OPEN
 SUPPORTED
@@ -608,7 +607,46 @@ WEAKENED
 REJECTED
 UNRESOLVED
 
-These are design candidates and should be validated against actual investigation behavior before implementation.
+Current Phase 1 behavior records hypotheses as a terminal snapshot when a
+conclusion is accepted. It does not persist intermediate progression.
+
+For M14, progression of the same hypothesis identity must follow this state
+model:
+
+OPEN
+    may transition to SUPPORTED, WEAKENED, REJECTED, or UNRESOLVED;
+
+WEAKENED
+    may transition to SUPPORTED, REJECTED, or UNRESOLVED when later evidence
+    materially changes support;
+
+UNRESOLVED
+    may transition to SUPPORTED, WEAKENED, or REJECTED when later evidence
+    resolves part of the uncertainty;
+
+SUPPORTED
+    may transition to WEAKENED or REJECTED only when new material
+    contradictory evidence is retained;
+
+REJECTED
+    is terminal for that hypothesis identity. A materially different proposed
+    explanation receives a new identity.
+
+Self-transitions that add no evidence or semantic change must not create false
+progression. A status change is application/domain-owned: the LLM may propose
+it, but validated evidence relationships determine whether it is accepted.
+
+Supporting and contradicting references remain attached to the same
+investigation and must not be removed merely to justify a transition. A
+hypothesis with material contradiction cannot be treated as fully supported
+under the existing support-level rules.
+
+M14 owns the minimum implementation and persistence mechanism for transition
+history. It must preserve an append-oriented history sufficient to reconstruct
+prior status, new status, producing step, and the evidence change. No new
+hypothesis status is introduced. If supersession or repeated semantically
+similar hypotheses requires a public-contract or domain change, M14 must report
+DECISION REQUIRED rather than inventing one.
 
 18.3 Important Rule
 
@@ -651,8 +689,7 @@ Finding
 ├── finding_id
 ├── statement
 ├── support_level
-├── supporting_evidence
-├── contradicting_evidence
+├── evidence[] with SUPPORTING / CONTRADICTING relationship
 └── confidence
 
 20.3 Finding Requirement
@@ -1293,37 +1330,25 @@ Investigation
 
 This example demonstrates the domain model without prescribing how any of those operations are implemented.
 
-Open Decisions for Subsequent Documents
+Deferred Decisions
 
-The domain model deliberately leaves the following for later technical design:
+Phase 1 resolved the concrete tool, repository, support-level, SQLite, error,
+analysis, and presentation choices in the derived documents and implementation.
+The following remain intentionally deferred:
 
-Exact tool request/result schemas.
+M14 hypothesis transition-history persistence and any required supersession
+representation;
 
-Exact repository interface.
+M15 evaluation-run metadata persistence;
 
-Exact LLM provider contract.
+the exact real-GCP adapter and client-library mapping;
 
-Exact investigation state serialization.
+production concurrency/deployment mechanisms;
 
-Exact hypothesis confidence semantics.
+future UI/API representations beyond the current Streamlit presentation.
 
-Exact finding support levels.
-
-Exact deterministic analysis operations supported in the MVP.
-
-Exact time-series aggregation API.
-
-Exact SQLite table structure.
-
-Exact GCP adapter mapping.
-
-Exact error hierarchy.
-
-Exact concurrency implementation.
-
-Exact UI representation of investigation progress.
-
-These should be resolved in the appropriate technical documents rather than prematurely embedded here.
+These decisions must preserve the invariants in this document. Confidence
+remains informational and must not determine support.
 
 Design Constraints for Derived Documents
 

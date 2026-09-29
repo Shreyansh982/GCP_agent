@@ -2,7 +2,7 @@ Investigation Logic
 
 GCP Observability Investigation Agent
 
-Status: Design Draft
+Status: Authoritative current runtime logic; future lifecycle behavior is explicitly marked
 Derived From: PRD v0.8, DOMAIN_MODEL.md, SYSTEM_ARCHITECTURE.md, TOOL_CONTRACTS v0.3, DATA_MODEL.md
 Purpose: Define deterministic rules governing investigation execution, evidence processing, termination, and conclusion validation.
 
@@ -111,6 +111,51 @@ status = PARTIAL
 termination_reason = MAX_TOOL_CALLS
 
 No terminal investigation may execute another action.
+
+Supported Outcome / Termination Mapping
+
+The following mapping is normative for the currently implemented runtime. It
+uses the existing enums and does not add lifecycle states.
+
+COMPLETED + SUFFICIENT_EVIDENCE
+    the Controller accepted a conclusion containing at least one valid finding;
+
+INSUFFICIENT_EVIDENCE + SUFFICIENT_EVIDENCE
+    the Controller accepted a structurally valid conclusion containing no
+    findings. In this historical enum combination, SUFFICIENT_EVIDENCE means
+    sufficient basis to terminate through the conclusion action, not that the
+    evidence established the user's requested explanation;
+
+PARTIAL + MAX_TOOL_CALLS
+    the controller action limit was reached before a valid conclusion;
+
+PARTIAL + MAX_DURATION
+    the investigation duration limit was observed before another action;
+
+FAILED + LLM_FAILURE
+    bounded LLM retries were exhausted or the LLM provider failed;
+
+FAILED + TOOL_FAILURE
+    a timeout/provider/system tool failure remained after bounded retries. This
+    remains FAILED even when prior evidence exists; the prior evidence is
+    retained and reported but does not convert the technical failure to PARTIAL;
+
+FAILED + VALIDATION_FAILURE
+    the LLM returned an object that could not be treated as a ToolRequest.
+
+A schema-valid but rejected tool request, including an invalid conclusion, is
+not terminal by itself. It is recorded, consumes an agent action, and the
+investigation may continue while budget remains. Repeated rejected actions may
+therefore end as PARTIAL + MAX_TOOL_CALLS.
+
+Persistence failure is not converted into successful or insufficient-evidence
+completion. It propagates as an application failure because the audit guarantee
+was not met.
+
+NO_NEW_EVIDENCE and SYSTEM_ERROR remain existing vocabulary but have no
+automatic terminal path in the current controller. Their future outcome mapping
+must be defined before those paths are implemented; Phase 2 evaluation must not
+expect them unless the corresponding runtime behavior exists.
 
 Controller Responsibilities
 
@@ -459,11 +504,13 @@ A finding is a conclusion the system is willing to report as supported.
 A candidate finding should contain:
 
 statement
-supporting_evidence
-optional contradicting_evidence
-support_level
+evidence references, each with SUPPORTING or CONTRADICTING relationship
+optional confidence metadata
+significant_evidence_gap
+causal_claim
+temporal_correlation_only
 
-Possible support levels:
+The application derives one of the approved support levels:
 
 SUPPORTED
 PARTIALLY_SUPPORTED
@@ -568,7 +615,9 @@ Preliminary default:
 
 The application owns budget accounting.
 
-The policy must define consistently whether rejected/replayed actions consume budget; the initial implementation should count every action reaching the controller unless a documented replay rule explicitly excludes it.
+Every action reaching the controller, including a rejected request or safe
+replay, consumes the controller action budget. A safe replay does not consume a
+new provider-execution attempt because no provider call is made.
 
 The LLM cannot override the budget.
 
@@ -590,11 +639,13 @@ partial/failed outcome as appropriate
 
 The controller must not continue merely because the LLM requests another action.
 
-No-New-Evidence Termination
+Deferred No-New-Evidence Termination
 
-The controller may stop when additional actions are no longer producing meaningful new evidence.
-
-Where possible, this should use deterministic signals such as:
+NO_NEW_EVIDENCE is reserved domain vocabulary; the current controller does not
+implement an automatic terminal path for it. A future implementation may stop
+when additional actions no longer produce meaningful new evidence, but it must
+first define an outcome mapping and a deterministic heuristic. Candidate
+signals include:
 
 repeated equivalent request
 +
@@ -604,15 +655,15 @@ no new observations
 +
 no meaningful change in hypothesis state
 
-The termination reason is:
-
-NO_NEW_EVIDENCE
-
-The exact heuristic can evolve without changing the domain contract.
+Any such path would use the existing NO_NEW_EVIDENCE termination reason. Until
+that behavior is implemented, scenarios and evaluation criteria must not expect
+this termination reason.
 
 Retry Policy
 
-Retries occur only for retryable failures.
+Retries occur only for retryable failures. The provider adapter owns
+provider-SDK/transport retries and provider-specific transient classification.
+The controller owns bounded logical retries and investigation-wide policy.
 
 INVALID_REQUEST
 → no retry
@@ -629,15 +680,22 @@ NO_DATA
 TIMEOUT
 → bounded retry
 
-TRANSIENT_PROVIDER_ERROR
-→ bounded retry
+PROVIDER_ERROR
+→ bounded retry only when the adapter/controller classifies it as transient
 
 SYSTEM_ERROR
 → bounded retry where appropriate
 
-Retries are application/infrastructure behavior.
+Retries are application/infrastructure behavior. Adapter attempts and
+controller retries of an already-approved action are one logical
+InvestigationStep and do not consume additional agent-action slots. The durable
+step records the final logical ToolResult; per-attempt details are operational
+telemetry unless a future audit requirement says otherwise.
 
-The LLM does not control low-level retries.
+Per-call timeouts bound provider calls. The investigation-wide duration check
+occurs between actions and is not a guarantee that an in-flight SDK call can be
+forcibly cancelled. The LLM does not control retry counts, backoff, or
+deadlines.
 
 LLM Failure Handling
 
@@ -712,7 +770,10 @@ A replayed result must preserve its original evidence IDs.
 
 A bounded or paginated result must not be treated as complete unless its metadata says it is complete.
 
-The detailed replay policy is implementation-level behavior.
+For Phase 2 evaluation, a replayed step is visible as agent tool activity but
+does not represent a new provider query or new evidence. MUST_QUERY is satisfied
+by the original successful execution, not by multiplying replays. A replay of a
+prohibited request still counts as a requested action for MUST_NOT_QUERY.
 
 conclude_investigation() Flow
 
@@ -807,9 +868,13 @@ CPU saturation may have contributed.
 Unresolved:
 Available telemetry does not establish causation.
 
-This may be a valid completed investigation rather than a system failure.
+This is a valid terminal investigation rather than a system failure. The
+current outcome is INSUFFICIENT_EVIDENCE with termination reason
+SUFFICIENT_EVIDENCE, using the historical interpretation defined in the
+normative mapping above.
 
-The outcome model distinguishes successful completion with insufficient evidence from technical failure.
+The outcome model distinguishes successful termination with insufficient
+evidence from technical failure.
 
 Partial Investigation Semantics
 

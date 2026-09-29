@@ -2,7 +2,7 @@ Data Model
 
 GCP Observability Investigation Agent
 
-Status: Design Draft
+Status: Authoritative Phase 1 persistence design; evaluation persistence remains deferred to M15
 Derived From: PRD v0.8, DOMAIN_MODEL.md, SYSTEM_ARCHITECTURE.md, TOOL_CONTRACTS v0.3
 Initial Storage: SQLite
 Design Goal: Preserve domain semantics, integrity, traceability, and replaceability without overengineering the first implementation.
@@ -406,14 +406,15 @@ investigations
 
 status
 
-Candidate lifecycle values:
+Current lifecycle values:
 
 CREATED
 RUNNING
-COMPLETED
-TERMINATED
+TERMINAL
 
-Outcome/termination semantics are stored separately.
+User-visible outcome and termination semantics are stored separately. Values
+such as COMPLETED, PARTIAL, INSUFFICIENT_EVIDENCE, and FAILED belong to
+investigation_outcomes.outcome_status, not investigations.status.
 
 12.2 investigation_scopes
 
@@ -443,14 +444,14 @@ investigation_outcomes
 ├── missing_evidence_json
 └── persisted_at
 
-Potential outcome_status values:
+Current outcome_status values:
 
 COMPLETED
 PARTIAL
 INSUFFICIENT_EVIDENCE
 FAILED
 
-Potential termination_reason values:
+Current termination_reason values:
 
 SUFFICIENT_EVIDENCE
 MAX_TOOL_CALLS
@@ -461,7 +462,9 @@ LLM_FAILURE
 VALIDATION_FAILURE
 SYSTEM_ERROR
 
-Exact enums are finalized in INVESTIGATION_LOGIC.md.
+The valid currently supported outcome/termination combinations are normative in
+INVESTIGATION_LOGIC.md. NO_NEW_EVIDENCE and SYSTEM_ERROR are reserved vocabulary
+without automatic controller terminal paths today.
 
 13. Investigation Steps
 
@@ -684,10 +687,13 @@ hypotheses
 ├── status
 ├── support_level
 ├── confidence
+├── significant_evidence_gap
+├── causal_claim
+├── temporal_correlation_only
 ├── created_at
 └── updated_at
 
-Potential status:
+Approved status vocabulary:
 
 OPEN
 SUPPORTED
@@ -695,13 +701,15 @@ WEAKENED
 REJECTED
 UNRESOLVED
 
-Potential support level:
+Current derived support level:
 
 SUPPORTED
 PARTIALLY_SUPPORTED
 UNSUPPORTED
 
-The exact semantics are finalized by INVESTIGATION_LOGIC.md.
+Phase 1 persists the accepted terminal hypothesis snapshot. M14 owns any schema
+change required for append-oriented transition history; updated_at alone must
+not be treated as proof that progression history is reconstructible.
 
 20.2 hypothesis_evidence
 
@@ -728,11 +736,17 @@ findings
 ├── finding_id           PK
 ├── investigation_id    FK
 ├── statement
-├── status
 ├── support_level
 ├── confidence
+├── significant_evidence_gap
+├── causal_claim
+├── temporal_correlation_only
 ├── created_at
 └── updated_at
+
+Finding status is not a separate current field. support_level is derived from
+validated evidence relationships, significant evidence gaps, and causal/
+temporal-correlation semantics. confidence remains informational.
 
 21.2 finding_evidence
 

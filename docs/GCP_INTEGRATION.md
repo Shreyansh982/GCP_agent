@@ -2,9 +2,9 @@ GCP Integration
 
 GCP Observability Investigation Agent
 
-Status: Design Draft
-Version: 0.2
-Derived From: PRD v0.8, DOMAIN_MODEL.md, SYSTEM_ARCHITECTURE.md, TOOL_CONTRACTS v0.3, DATA_MODEL.md, INVESTIGATION_LOGIC.md, AGENT_BEHAVIOUR v0.2, SECURITY_ARCHITECTURE.md
+Status: Authoritative future integration design; real-GCP adapter implementation is deferred
+Version: 0.3
+Derived From: PRD v0.8, DOMAIN_MODEL.md, SYSTEM_ARCHITECTURE.md, TOOL_CONTRACTS.md, DATA_MODEL.md, INVESTIGATION_LOGIC.md, AGENT_BEHAVIOR.md, SECURITY_ARCHITECTURE.md
 Purpose: Define how the provider-neutral telemetry contracts map to Google Cloud Monitoring while preserving the domain and application boundaries.
 
 1. Purpose
@@ -74,7 +74,7 @@ MonitoredResourceDescriptor
 TimeSeries
 AlertPolicy
 
-Google documents TimeSeries, MetricDescriptor, and MonitoredResourceDescriptor as part of the Monitoring API's metrics API. timeSeries.list, metricDescriptors.list, and monitoredResourceDescriptors.list use a project name and can behave differently when the project is a metrics-scope scoping project. citeturn373320search3
+Google documents TimeSeries, MetricDescriptor, and MonitoredResourceDescriptor as part of the Monitoring API's metrics API. timeSeries.list, metricDescriptors.list, and monitoredResourceDescriptors.list use a project name and can behave differently when the project is a metrics-scope scoping project.
 
 The adapter must therefore distinguish:
 
@@ -90,7 +90,7 @@ rather than assuming every Monitoring API call has identical project semantics.
 
 The initial provider should use Application Default Credentials (ADC).
 
-Google documents ADC as the mechanism through which authentication libraries locate credentials based on the application environment. ADC supports local development and attached service accounts without requiring application code to change between environments. citeturn917325search0turn917325search2
+Google documents ADC as the mechanism through which authentication libraries locate credentials based on the application environment. ADC supports local development and attached service accounts without requiring application code to change between environments.
 
 Conceptually:
 
@@ -112,17 +112,17 @@ GOOGLE_APPLICATION_CREDENTIALS;
 
 local ADC created with gcloud auth application-default login;
 
-an attached service account available through the environment. citeturn917325search0
+an attached service account available through the environment.
 
 The implementation should prefer environment-appropriate workload identity/service-account attachment over long-lived service-account key files.
 
-Google explicitly notes that service-account keys create security risk and are not recommended. citeturn917325search0
+Google explicitly notes that service-account keys create security risk and are not recommended.
 
 5. IAM
 
 The first real-GCP deployment should use the least-privileged read-only Monitoring permissions required by the application.
 
-Google's roles/monitoring.viewer role provides read-only access to Monitoring data and configurations, including monitoring alerts and alert-policy read operations. citeturn917325search10
+Google's roles/monitoring.viewer role provides read-only access to Monitoring data and configurations, including monitoring alerts and alert-policy read operations.
 
 The final role assignment must be verified against the exact API methods used by this project.
 
@@ -150,7 +150,7 @@ some Monitoring API methods operate on a named project;
 
 timeSeries.list, timeSeries.query, metricDescriptors.list, and monitoredResourceDescriptors.list have special behavior when the named project is also a scoping project for a metrics scope;
 
-those methods may retrieve data from the named project and projects monitored by that metrics scope. citeturn373320search3
+those methods may retrieve data from the named project and projects monitored by that metrics scope.
 
 Therefore:
 
@@ -176,7 +176,7 @@ projects.metricDescriptors.list
 
 operation.
 
-Google documents that metricDescriptors.list returns metric descriptors available in a project, and supports filtering to restrict the returned set. citeturn373320search1turn373320search4
+Google documents that metricDescriptors.list returns metric descriptors available in a project, and supports filtering to restrict the returned set.
 
 The adapter should:
 
@@ -208,7 +208,7 @@ MetricDescriptor
 
 maps naturally to the Monitoring API's metric descriptor concepts.
 
-Google documents metric descriptors as the definitions used to describe metric types, including their labels, value type, metric kind, unit, description, and metadata. citeturn373320search0turn373320search2
+Google documents metric descriptors as the definitions used to describe metric types, including their labels, value type, metric kind, unit, description, and metadata.
 
 The adapter should preserve these semantics.
 
@@ -256,33 +256,34 @@ Telemetry-backed discovery is not a universal GCP resource inventory.
 
 A resource may exist in GCP but not appear if it has no relevant metric time series available to the discovery query.
 
-The adapter must communicate this limitation through tool semantics/documentation and must not imply that the returned set is necessarily the complete set of resources in the project.
+The adapter must communicate this limitation through the existing result
+contract and must not imply that the returned set is the complete project
+inventory. For telemetry-backed discovery:
+
+truncated
+    reports whether the adapter/application stopped before processing all
+    results from the discovery query;
+
+total_count_known
+    is null when the complete number of matching concrete resources is not
+    known;
+
+warnings and provenance
+    must state that discovery is telemetry-backed and can omit resources with
+    no relevant time series.
+
+truncated=false means only that the bounded discovery query was fully consumed.
+It does not prove universal source coverage. The agent may say that no resources
+were observed by the query; it must not say that no matching resources exist in
+GCP when source coverage is unknown.
 
 The resource-descriptor API may still be used when the application needs to discover supported resource types or their label schemas.
 
 10. Resource Mapping
 
-A real Cloud Monitoring time series contains the monitored resource that produced its values.
-
-Google documents MonitoredResource as part of a time series and that the resource's label values identify the monitored resource instance.
-
-The adapter maps:
-
-GCP MonitoredResource
-        ↓
-MonitoredResource
-├── type
-└── labels
-
-The adapter must preserve the labels required to identify the resource.
-
-For list_resources(), concrete resource identities discovered from time series are deduplicated before being returned.
-
-10. Resource Mapping
-
 A real Cloud Monitoring time series embeds the monitored resource that produced its values.
 
-Google documents the MonitoredResource object as part of a time series and states that each combination of resource-label values identifies a unique resource instance. citeturn373320search0
+Google documents the MonitoredResource object as part of a time series and states that each combination of resource-label values identifies a unique resource instance.
 
 Therefore the adapter maps:
 
@@ -293,6 +294,9 @@ MonitoredResource
 └── labels
 
 The adapter must preserve all labels required to identify the resource.
+
+For list_resources(), concrete resource identities discovered from time series
+are deduplicated before being returned.
 
 11. Time-Series Query Mapping
 
@@ -314,7 +318,7 @@ resource.labels.[KEY]
 metric.type
 metric.labels.[KEY]
 
-and requires the metric selector to identify exactly one metric type for timeSeries.list. citeturn373320search4
+and requires the metric selector to identify exactly one metric type for timeSeries.list.
 
 The adapter should therefore construct the provider filter from structured selectors rather than allowing the LLM to supply a raw Monitoring filter string.
 
@@ -361,7 +365,7 @@ TimeSeries
 ├── resource
 └── points
 
-Google documents that a time series is a list of timestamped data points for one metric type from a specific monitored resource. citeturn373320search4turn373320search0
+Google documents that a time series is a list of timestamped data points for one metric type from a specific monitored resource.
 
 This matches the domain model directly.
 
@@ -376,7 +380,7 @@ group_by_fields
 
 maps to Cloud Monitoring aggregation concepts.
 
-Google documents that aggregation typically begins by aligning each time series to common time boundaries and can then combine multiple aligned series. citeturn373320search9
+Google documents that aggregation typically begins by aligning each time series to common time boundaries and can then combine multiple aligned series.
 
 For the API-level semantics:
 
@@ -411,7 +415,7 @@ Unsupported combinations should produce a structured provider/validation error.
 
 Cross-series reduction may combine aligned series.
 
-Google documents that time-series data must first be aligned before cross-series reduction and that when a cross_series_reducer is specified, per_series_aligner must be specified and cannot be ALIGN_NONE; alignment_period must also be specified. citeturn917325search11
+Google documents that time-series data must first be aligned before cross-series reduction and that when a cross_series_reducer is specified, per_series_aligner must be specified and cannot be ALIGN_NONE; alignment_period must also be specified.
 
 The adapter must enforce this before making the provider call.
 
@@ -429,7 +433,7 @@ fields not specified are aggregated away;
 
 resource.type is implicitly part of grouping semantics;
 
-cross-series reduction cannot reduce across different resource types. citeturn917325search11
+cross-series reduction cannot reduce across different resource types.
 
 The adapter must preserve these semantics when translating provider responses.
 
@@ -437,7 +441,7 @@ The adapter must preserve these semantics when translating provider responses.
 
 Alignment and reduction can change the resulting metric kind or value type.
 
-Google explicitly notes that alignment can change metric_kind or value_type, and reduction can also yield a series with different metric kind/value type from the input. citeturn917325search11
+Google explicitly notes that alignment can change metric_kind or value_type, and reduction can also yield a series with different metric kind/value type from the input.
 
 Therefore the adapter must not assume:
 
@@ -559,7 +563,7 @@ search scope
 
 The final LLM-facing result must explicitly indicate truncation where applicable.
 
-Google documents that projects can contain many metric descriptors, so unbounded discovery should not be assumed safe. citeturn373320search1
+Google documents that projects can contain many metric descriptors, so unbounded discovery should not be assumed safe.
 
 25. Alert Integration
 
@@ -574,16 +578,24 @@ The GCP integration must distinguish:
 AlertPolicy
     = configuration/rule
 
-Incident
-    = firing/active alert occurrence
+Alert occurrence
+    = the read-only projects.alerts resource representing a policy violation;
+    this is the occurrence historically described as an incident
 
 For the question:
 
 "What alerts fired during this interval?"
 
-alert incidents are the relevant source, not merely the policies that exist.
+alert occurrences are the relevant source, not merely the policies that exist.
 
-The current Monitoring API exposes incident retrieval through the alerts/incident API surface. The adapter should verify the exact client-library method and response shape used by the selected Python client version before implementation.
+The current Cloud Monitoring REST API exposes projects.alerts.list and
+projects.alerts.get. The real-GCP adapter must use that occurrence surface for
+get_alerts. AlertPolicyService list/get alone does not satisfy the contract.
+Because the Python client-library surface and launch status may differ from the
+REST API, the GCP milestone must verify the selected library/version; a small
+REST-backed infrastructure implementation is permissible only if the official
+client does not expose the required read-only method. This choice remains
+inside GCPTelemetryProvider.
 
 Alert policy metadata may be retrieved separately when needed to explain:
 
@@ -606,14 +618,16 @@ start_time
 end_time
 metadata
 
-The adapter should populate incident/firing information from the incident endpoint and policy/condition metadata when available.
+The adapter should populate firing information from projects.alerts and use the
+policy snapshot carried by that resource where sufficient. A separate
+alertPolicies.get call is optional enrichment, not the occurrence source.
 
 The conceptual distinction is:
 
 AlertPolicy:
 "CPU > 90% for 5 minutes"
 
-Incident:
+Alert occurrence (incident):
 "That policy fired for resource X at time T"
 
 An incident may therefore reference a policy without the policy itself being the event being investigated.
@@ -622,7 +636,8 @@ metric_reference remains optional because alert conditions are not necessarily l
 
 27. Alerting Policy and Incident Scope
 
-Alert and incident retrieval must use the same application authorization model as telemetry queries.
+Alert-occurrence and policy retrieval must use the same application
+authorization model as telemetry queries.
 
 The adapter must not allow an LLM-supplied project or scope to expand access.
 
@@ -632,11 +647,12 @@ Authenticated Principal
         ↓
 Authorized GCP scope
         ↓
-Incident / policy query
+Alert occurrence / policy query
         ↓
 Normalized Alert
 
-The adapter must verify the exact semantics of the selected Monitoring incident API for project and metrics-scope behavior before implementation.
+The adapter must verify the exact projects.alerts project/metrics-scope
+semantics before implementation.
 
 Where policy metadata is required, it should be retrieved only for incidents already within the authorized investigation scope.
 
@@ -770,7 +786,7 @@ For local development, ADC can be configured with:
 
 gcloud auth application-default login
 
-Google documents this as a way to make credentials available to Google Cloud client libraries and APIs. citeturn917325search7
+Google documents this as a way to make credentials available to Google Cloud client libraries and APIs.
 
 Development credentials must not be copied into the repository or embedded into test fixtures.
 
@@ -778,7 +794,7 @@ Development credentials must not be copied into the repository or embedded into 
 
 In a deployed GCP environment, prefer an attached service account or another workload-appropriate ADC mechanism rather than long-lived service-account key files.
 
-Google documents attached service accounts as an ADC source and warns that service-account keys create additional security risk. citeturn917325search0
+Google documents attached service accounts as an ADC source and warns that service-account keys create additional security risk.
 
 The final deployment platform determines how the identity is attached.
 
@@ -818,7 +834,8 @@ list_resources() can discover concrete resources through the documented telemetr
 
 list_resources() does not claim to be a universal inventory of all GCP resources.
 
-get_alerts() retrieves incident/firing information rather than treating alert-policy configuration as an incident.
+get_alerts() retrieves projects.alerts firing occurrences rather than treating
+alert-policy configuration as an occurrence.
 
 Policy metadata can be associated with incidents where required.
 
@@ -861,12 +878,40 @@ Existing application/domain tests pass unchanged when the telemetry provider is 
 │ metricDescriptors.list                 │
 │ monitoredResourceDescriptors.list      │
 │ timeSeries.list                        │
-│ alertPolicies.list/get                 │
+│ projects.alerts.list/get               │
+│ alertPolicies.get (optional enrichment)│
 └────────────────────────────────────────┘
 
 The GCP adapter is therefore an infrastructure translation layer, not part of the investigation domain.
 
-40. Derived Documents
+40. Authoritative Google References
+
+The GCP milestone must re-verify these references against the selected client
+library version before implementation:
+
+Cloud Monitoring API overview and metrics-scope project semantics:
+https://cloud.google.com/monitoring/api/v3
+
+Cloud Monitoring REST API:
+https://cloud.google.com/monitoring/api/ref_v3/rest
+
+Time-series list and aggregation contract:
+https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.timeSeries/list
+
+Alert occurrence resource and list operation:
+https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.alerts
+https://cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.alerts/list
+
+Application Default Credentials:
+https://cloud.google.com/docs/authentication/application-default-credentials
+
+Cloud Monitoring IAM roles:
+https://cloud.google.com/iam/docs/roles-permissions/monitoring
+
+These links replace historical non-rendering citation placeholders. They are
+design evidence, not a claim that the real-GCP adapter is implemented.
+
+41. Derived Documents
 
 This document feeds into:
 
@@ -886,7 +931,7 @@ DATA_MODEL.md defines persistence.
 
 INVESTIGATION_LOGIC.md defines execution.
 
-AGENT_BEHAVIOUR.md defines LLM behavior.
+AGENT_BEHAVIOR.md defines LLM behavior.
 
 SECURITY_ARCHITECTURE.md defines security controls.
 

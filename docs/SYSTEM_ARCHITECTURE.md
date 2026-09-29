@@ -2,7 +2,7 @@ System Architecture
 
 GCP Observability Investigation Agent
 
-Status: Design Draft
+Status: Authoritative design; implemented through M10, with future behavior explicitly marked
 Derived From: PRD v0.8, DOMAIN_MODEL.md
 Architecture Style: Modular monolith with explicit domain and infrastructure boundaries
 Initial Deployment: Single application
@@ -555,13 +555,49 @@ Core logic depends on:
 
 LLMProvider
 
-Possible implementations:
+Current implementations:
 
-PrimaryLLMProvider
-AlternativeLLMProvider
-MockLLMProvider
+GeminiLLMProvider
+FakeLLMProvider (deterministic tests only)
+
+An alternative runtime provider is future-compatible only if it preserves the
+contract below.
 
 Provider-specific SDKs, authentication, retry behavior, response formats, and token accounting remain in infrastructure.
+
+Current Provider Contract
+
+The core LLMProvider operation accepts one application-built bounded context and
+returns exactly one internal ToolRequest. It may raise TimeoutError for an
+exhausted timeout path or another safe adapter exception for malformed output,
+provider failure, or exhausted provider retries. Provider payloads, SDK types,
+credentials, and raw error details do not cross the adapter boundary.
+
+The provider adapter owns SDK/transport retries and maps provider output into
+the registered ToolRequest vocabulary. The controller owns bounded logical
+retries and converts unrecoverable provider behavior into the existing
+investigation lifecycle. The LLM never chooses either retry policy.
+
+Usage Metadata
+
+Usage metadata is an optional operational capability in the current Phase 1
+provider integration.
+An adapter may expose the most recent input, output, total, and cached-input
+token counts; the controller records available integer values and continues
+safely when they are absent. Usage metadata is not domain evidence and does not
+affect investigation correctness.
+
+Model and Prompt Identity
+
+The current runtime configures model identity and the adapter-owned system
+instruction outside the domain. Phase 1 does not persist a portable prompt or
+model identity contract. M15 must record model/provider identity and prompt or
+script/configuration version for evaluation reproducibility without adding SDK
+types or secrets to the domain.
+
+Provider substitution is compatible only when the replacement preserves the
+same bounded-context-to-single-ToolRequest behavior, registered tool schemas,
+safe error boundary, and application ownership of validation and lifecycle.
 
 17. Tool-Calling Boundary
 

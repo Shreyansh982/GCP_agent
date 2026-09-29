@@ -2,8 +2,8 @@ Security Architecture
 
 GCP Observability Investigation Agent
 
-Status: Design Draft
-Derived From: PRD v0.8, DOMAIN_MODEL.md, SYSTEM_ARCHITECTURE.md, TOOL_CONTRACTS v0.3, DATA_MODEL.md, INVESTIGATION_LOGIC.md, AGENT_BEHAVIOUR v0.2
+Status: Authoritative security design; production authentication and real-GCP controls remain future work
+Derived From: PRD v0.8, DOMAIN_MODEL.md, SYSTEM_ARCHITECTURE.md, TOOL_CONTRACTS.md, DATA_MODEL.md, INVESTIGATION_LOGIC.md, AGENT_BEHAVIOR.md
 Security Goal: Ensure the LLM can reason over observability data without becoming an authority over credentials, authorization, execution, infrastructure, or durable system state.
 
 1. Purpose
@@ -1045,6 +1045,6 @@ TOOL_CONTRACTS.md defines the structured execution boundary.
 
 INVESTIGATION_LOGIC.md defines lifecycle enforcement.
 
-AGENT_BEHAVIOUR.md defines the LLM's behavioral constraints.
+AGENT_BEHAVIOR.md defines the LLM's behavioral constraints.
 
 This document defines how those pieces combine into a secure system.

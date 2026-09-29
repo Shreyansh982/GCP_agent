@@ -1,22 +1,40 @@
-You are the primary implementation agent for the **GCP Observability Investigation Agent**.
+Implementation Plan
 
-The repository is greenfield apart from the `docs/` directory.
+GCP Observability Investigation Agent
 
-## AUTHORITATIVE DESIGN DOCUMENTS
+Status: Phase 1 and Phase 1.1 complete; M10 complete; M11 is the current
+authorized milestone and has not started.
+
+This document is both the controlled milestone plan and a historical completion
+record. Instructions for completed milestones describe the requirements that
+were implemented; they are not directions to recreate the repository from a
+greenfield state.
+
+AUTHORITATIVE DESIGN DOCUMENTS
 
 Before making implementation decisions, read the complete contents of:
 
-* `docs/PRD.md`
-* `docs/SYSTEM_ARCHITECTURE.md`
-* `docs/DOMAIN_MODEL.md`
-* `docs/DATA_MODEL.md`
-* `docs/TOOL_CONTRACTS.md`
-* `docs/AGENT_BEHAVIOR.md`
-* `docs/INVESTIGATION_LOGIC.md`
-* `docs/TESTING_STRATEGY.md`
-* `docs/SECURITY_ARCHITECTURE.md`
-* `docs/OBSERVABILITY.md`
-* `docs/GCP_INTEGRATION.md`
+docs/PRD.md
+
+docs/SYSTEM_ARCHITECTURE.md
+
+docs/DOMAIN_MODEL.md
+
+docs/DATA_MODEL.md
+
+docs/TOOL_CONTRACTS.md
+
+docs/AGENT_BEHAVIOR.md
+
+docs/INVESTIGATION_LOGIC.md
+
+docs/TESTING_STRATEGY.md
+
+docs/SECURITY_ARCHITECTURE.md
+
+docs/OBSERVABILITY.md
+
+docs/GCP_INTEGRATION.md
 
 These documents define the intended architecture, domain semantics, contracts, security boundaries, investigation behavior, and Phase 1 requirements.
 
@@ -24,94 +42,127 @@ Treat them as the engineering source of truth.
 
 Do not redesign the system unless a genuine contradiction or impossible requirement is discovered.
 
----
-
-# APPROVED PHASE 1 DECISIONS
+APPROVED PHASE 1 DECISIONS
 
 The following decisions have already been approved and must be treated as binding:
 
 1. Architecture:
 
-   * modular monolith
-   * clear domain/application/infrastructure/presentation boundaries
-   * dependency inversion
-   * no premature microservices
+   * modular monolith
+
+   * clear domain/application/infrastructure/presentation boundaries
+
+   * dependency inversion
+
+   * no premature microservices
 
 2. Phase 1:
 
-   * single-turn investigations
-   * mock GCP telemetry environment
-   * SQLite persistence
-   * Streamlit presentation
-   * Google Gemini as the real LLM provider
+   * single-turn investigations
+
+   * mock GCP telemetry environment
+
+   * SQLite persistence
+
+   * Streamlit presentation
+
+   * Google Gemini as the real LLM provider
 
 3. LLM architecture:
 
-   * `LLMProvider` is an abstraction
-   * `GeminiLLMProvider` is the real runtime provider
-   * `FakeLLMProvider` is for deterministic automated tests only
-   * the LLM proposes structured actions
-   * deterministic application code validates and executes them
-   * the LLM is never the security boundary or execution controller
+   * LLMProvider is an abstraction
+
+   * GeminiLLMProvider is the real runtime provider
+
+   * FakeLLMProvider is for deterministic automated tests only
+
+   * the LLM proposes structured actions
+
+   * deterministic application code validates and executes them
+
+   * the LLM is never the security boundary or execution controller
 
 4. Tool budget:
 
-   * preliminary default = 12 agent actions per investigation
-   * budget is application-controlled
-   * the LLM cannot override it
+   * preliminary default = 12 agent actions per investigation
+
+   * budget is application-controlled
+
+   * the LLM cannot override it
 
 5. Metric-label validation:
 
-   * metric-label filters are a separate namespace from resource-label filters
-   * every metric-label filter key must exist in the selected `MetricDescriptor`
-   * unknown metric-label keys are `INVALID_REQUEST`
-   * invalid requests must be rejected before provider execution
+   * metric-label filters are a separate namespace from resource-label filters
+
+   * every metric-label filter key must exist in the selected MetricDescriptor
+
+   * unknown metric-label keys are INVALID_REQUEST
+
+   * invalid requests must be rejected before provider execution
 
 6. Support levels:
 
-   * `SUPPORTED`: valid supporting evidence exists and no material contradiction undermines the claim
-   * `PARTIALLY_SUPPORTED`: supporting evidence exists but material contradiction or significant evidence gap remains
-   * `UNSUPPORTED`: no valid supporting evidence establishes the claim
-   * LLM confidence is informational only
-   * LLM confidence must never determine support
-   * temporal correlation alone does not establish causation
+   * SUPPORTED: valid supporting evidence exists and no material contradiction undermines the claim
+
+   * PARTIALLY_SUPPORTED: supporting evidence exists but material contradiction or significant evidence gap remains
+
+   * UNSUPPORTED: no valid supporting evidence establishes the claim
+
+   * LLM confidence is informational only
+
+   * LLM confidence must never determine support
+
+   * temporal correlation alone does not establish causation
 
 7. Evidence:
 
-   * evidence IDs are generated by the application
-   * the LLM may reference existing evidence IDs
-   * the LLM must not manufacture authoritative evidence IDs
-   * contradictory evidence must remain representable
-   * evidence provenance must be preserved
+   * evidence IDs are generated by the application
+
+   * the LLM may reference existing evidence IDs
+
+   * the LLM must not manufacture authoritative evidence IDs
+
+   * contradictory evidence must remain representable
+
+   * evidence provenance must be preserved
 
 8. Deterministic behavior:
 
-   * validation, authorization, limits, query construction, retry policy, lifecycle, evidence validation, and deterministic calculations remain outside the LLM
-   * deterministic calculations should be implemented as deterministic code, not model reasoning
+   * validation, authorization, limits, query construction, retry policy, lifecycle, evidence validation, and deterministic calculations remain outside the LLM
+
+   * deterministic calculations should be implemented as deterministic code, not model reasoning
 
 9. Testing:
 
-   * deterministic behavior must be tested deterministically
-   * architecture, domain, contract, repository, security, integration, and scenario tests are required
-   * standard tests must not require live GCP
-   * standard tests must not require paid LLM calls
+   * deterministic behavior must be tested deterministically
 
----
+   * architecture, domain, contract, repository, security, integration, and scenario tests are required
 
-# IMPLEMENTATION DISCIPLINE
+   * standard tests must not require live GCP
+
+   * standard tests must not require paid LLM calls
+
+IMPLEMENTATION DISCIPLINE
 
 Do not silently turn your own design preferences into project requirements.
 
 You may choose ordinary implementation details when they do not alter:
 
-* domain semantics
-* public tool contracts
-* evidence semantics
-* persistence semantics
-* lifecycle behavior
-* security behavior
-* provider boundaries
-* investigation limits
+domain semantics
+
+public tool contracts
+
+evidence semantics
+
+persistence semantics
+
+lifecycle behavior
+
+security behavior
+
+provider boundaries
+
+investigation limits
 
 Use the simplest implementation consistent with the documents.
 
@@ -119,48 +170,67 @@ If you encounter a decision that materially affects one of those areas and the d
 
 DECISION REQUIRED
 
-* Proposed change:
-* Why it is needed:
-* Relevant design sections:
-* Alternatives considered:
-* Recommended option:
-* Expected impact:
+Proposed change:
+
+Why it is needed:
+
+Relevant design sections:
+
+Alternatives considered:
+
+Recommended option:
+
+Expected impact:
 
 Do not silently implement such a decision.
 
 Do not introduce:
 
-* microservices
-* queues/brokers
-* event sourcing
-* arbitrary agent frameworks
-* unnecessary ORM layers
-* additional infrastructure abstractions
-* new public contract fields
-* new lifecycle states
-* new evidence semantics
-* new security mechanisms
+microservices
+
+queues/brokers
+
+event sourcing
+
+arbitrary agent frameworks
+
+unnecessary ORM layers
+
+additional infrastructure abstractions
+
+new public contract fields
+
+new lifecycle states
+
+new evidence semantics
+
+new security mechanisms
 
 unless explicitly justified by the design documents or approved later.
 
----
-
-# IMPLEMENTATION ORDER
+IMPLEMENTATION ORDER
 
 Work strictly milestone-by-milestone.
 
-## M0 — Foundation
+M0 — Foundation
 
 Create:
 
-* repository/package structure
-* `pyproject.toml`
-* dependency configuration
-* `.gitignore`
-* configuration skeleton
-* package `__init__.py` files
-* test structure
-* architecture/import-boundary tests
+repository/package structure
+
+pyproject.toml
+
+dependency configuration
+
+.gitignore
+
+configuration skeleton
+
+package __init__.py files
+
+test structure
+
+architecture/import-boundary tests
 
 The architecture tests should enforce the documented dependency boundaries.
 
@@ -168,147 +238,219 @@ Run the M0 tests.
 
 Do not begin M1 until M0 is complete and passing.
 
-## M1 — Domain
+M1 — Domain
 
 Implement:
 
-* value objects
-* IDs
-* `TimeInterval`
-* metric/resource value types
-* investigation aggregate
-* investigation lifecycle
-* investigation scope
-* temporal context
-* investigation steps
-* observations
-* deterministic analyses
-* evidence references
-* hypotheses
-* findings
-* support-level semantics
-* deterministic analysis primitives
-* provider ports
+value objects
+
+IDs
+
+TimeInterval
+
+metric/resource value types
+
+investigation aggregate
+
+investigation lifecycle
+
+investigation scope
+
+temporal context
+
+investigation steps
+
+observations
+
+deterministic analyses
+
+evidence references
+
+hypotheses
+
+findings
+
+support-level semantics
+
+deterministic analysis primitives
+
+provider ports
 
 Preserve all domain invariants from the design documents.
 
 Write and run domain tests.
 
-## M2 — Persistence
+M2 — Persistence
 
 Implement:
 
-* SQLite migrations
-* telemetry schema
-* investigation/audit schema
-* repository
-* database mappers
-* foreign-key enforcement
-* transaction boundaries
-* optimistic version handling
-* append-oriented historical persistence
+SQLite migrations
+
+telemetry schema
+
+investigation/audit schema
+
+repository
+
+database mappers
+
+foreign-key enforcement
+
+transaction boundaries
+
+optimistic version handling
+
+append-oriented historical persistence
 
 Write and run repository/schema/persistence tests.
 
-## M3 — Mock Telemetry
+M3 — Mock Telemetry
 
 Implement:
 
-* `MockTelemetryProvider`
-* metric descriptor discovery
-* resource discovery
-* metric querying
-* aggregation
-* alert retrieval
-* deterministic fixtures
-* scenario loading
+MockTelemetryProvider
+
+metric descriptor discovery
+
+resource discovery
+
+metric querying
+
+aggregation
+
+alert retrieval
+
+deterministic fixtures
+
+scenario loading
 
 The mock provider must implement the same provider-level contract expected of the future GCP adapter.
 
 Write provider contract/conformance tests.
 
-## M4 — Tools and Validation
+M4 — Tools and Validation
 
 Implement:
 
-* five registered tools
-* tool registry
-* Pydantic request schemas
-* structured result schemas
-* schema validation
-* semantic validation
-* metric/resource compatibility validation
-* metric-label key validation
-* authorization/scope validation
-* execution-limit validation
-* result-size feasibility checks
-* retry classification
-* deterministic result processing
-* evidence creation
+five registered tools
+
+tool registry
+
+Pydantic request schemas
+
+structured result schemas
+
+schema validation
+
+semantic validation
+
+metric/resource compatibility validation
+
+metric-label key validation
+
+authorization/scope validation
+
+execution-limit validation
+
+result-size feasibility checks
+
+retry classification
+
+deterministic result processing
+
+evidence creation
 
 Tools:
 
-* `search_metric_descriptors`
-* `query_metric`
-* `list_resources`
-* `get_alerts`
-* `conclude_investigation`
+search_metric_descriptors
+
+query_metric
+
+list_resources
+
+get_alerts
+
+conclude_investigation
 
 Every provider call must be unreachable unless validation succeeds.
 
 Write and run contract tests.
 
-## M5 — Investigation Engine
+M5 — Investigation Engine
 
 Implement:
 
-* `InvestigationController`
-* `ContextBuilder`
-* deterministic conclusion validation
-* `FakeLLMProvider`
-* investigation action loop
-* bounded execution
-* evidence ingestion
-* terminal-state handling
+InvestigationController
+
+ContextBuilder
+
+deterministic conclusion validation
+
+FakeLLMProvider
+
+investigation action loop
+
+bounded execution
+
+evidence ingestion
+
+terminal-state handling
 
 The controller, not the LLM, owns the loop.
 
 Write deterministic agent-loop and ContextBuilder tests.
 
-## M6 — Application Integration
+M6 — Application Integration
 
 Implement:
 
-* `InvestigationApplicationService`
-* bootstrap/container
-* configuration wiring
-* structured logging
-* redaction
-* progress events
-* application integration
+InvestigationApplicationService
+
+bootstrap/container
+
+configuration wiring
+
+structured logging
+
+redaction
+
+progress events
+
+application integration
 
 Run the end-to-end Phase 1 integration tests using:
 
 FakeLLM
+
 +
+
 MockTelemetryProvider
+
 +
+
 SQLite
 
 No paid LLM calls.
 
-## M7 — Gemini
+M7 — Gemini
 
 Implement:
 
-* `GeminiLLMProvider`
-* Gemini SDK integration
-* function/tool schema translation
-* structured action parsing
-* provider error handling
-* token usage extraction
-* configuration
-* timeout/retry handling
+GeminiLLMProvider
+
+Gemini SDK integration
+
+function/tool schema translation
+
+structured action parsing
+
+provider error handling
+
+token usage extraction
+
+configuration
+
+timeout/retry handling
 
 Keep Gemini SDK types entirely inside the infrastructure adapter.
 
@@ -316,19 +458,27 @@ Test with a fake client layer.
 
 Do not require live Gemini calls in the standard test suite.
 
-## M8 — Streamlit
+M8 — Streamlit
 
 Implement:
 
-* user input
-* investigation submission
-* progress display
-* findings
-* evidence
-* uncertainty
-* investigation status
-* audit trail
-* sanitization/rendering controls
+user input
+
+investigation submission
+
+progress display
+
+findings
+
+evidence
+
+uncertainty
+
+investigation status
+
+audit trail
+
+sanitization/rendering controls
 
 The presentation layer must communicate through the application layer rather than directly accessing providers or persistence.
 
@@ -336,87 +486,944 @@ Do not place investigation execution state in Streamlit process-local state.
 
 Write presentation security tests.
 
-## M8.5 — Phase 1 Acceptance Remediation
+M8.5 — Phase 1 Acceptance Remediation
 
 Close only the gaps that currently prevent the documented Phase 1 acceptance gate from being verified. Keep the modular-monolith, provider, domain, evidence, lifecycle, and security boundaries established in M0-M8.
 
 Implementation work:
 
-* add one configuration-backed Phase 1 request-policy source for the following defaults: maximum investigation-question length of 4,000 characters, maximum serialized tool-request/payload size of 32 KiB, maximum label/filter-map cardinality of 50 entries per map, and maximum alert/resource collection size of 100 items before materialization;
-* enforce the 4,000-character question limit in `InvestigationApplicationService` so non-Streamlit callers receive the same limit as the existing UI;
-* validate payload size and label/filter cardinality before provider execution, and bound alert/resource collections before they become unbounded tool results; retain existing structured errors, result metadata, and authorization behavior;
-* add the Phase 1 observability minimum using the existing application logging path only: basic low-cardinality counters/timers, investigation/step-correlated tool tracing, SQLite persistence success/failure visibility, and Gemini usage logging when the provider exposes usage. Do not add external telemetry infrastructure, dashboards, queues, or new domain state.
+add one configuration-backed Phase 1 request-policy source for the following defaults: maximum investigation-question length of 4,000 characters, maximum serialized tool-request/payload size of 32 KiB, maximum label/filter-map cardinality of 50 entries per map, and maximum alert/resource collection size of 100 items before materialization;
+
+enforce the 4,000-character question limit in InvestigationApplicationService so non-Streamlit callers receive the same limit as the existing UI;
+
+validate payload size and label/filter cardinality before provider execution, and bound alert/resource collections before they become unbounded tool results; retain existing structured errors, result metadata, and authorization behavior;
+
+add the Phase 1 observability minimum using the existing application logging path only: basic low-cardinality counters/timers, investigation/step-correlated tool tracing, SQLite persistence success/failure visibility, and Gemini usage logging when the provider exposes usage. Do not add external telemetry infrastructure, dashboards, queues, or new domain state.
 
 Fixture and test work:
 
-* add deterministic Traffic Surge fixture coverage and complete deterministic FakeLLM scenario coverage for CPU Saturation, Traffic Surge, Latency Without CPU, and Missing Data. Assert the documented structured outcomes, including no unsupported causation, no CPU support when CPU is stable, and insufficient evidence when required telemetry is unavailable;
-* retain and run the existing contradictory-evidence, tool-limit, duration-limit, LLM-failure, invalid-conclusion, and duplicate-replay scenarios as the remaining core-scenario coverage;
-* add the Credential Exfiltration Attempt security scenario, proving that an attempted secret request cannot access credentials, invoke an unregistered capability, enter investigation context, or produce a secret-bearing response;
-* add deterministic resource-exhaustion tests for all four approved limits, including pre-provider rejection/bounded processing, structured warnings/errors, and retention of applicable existing result metadata;
-* add observability tests for identifier propagation, tool-event correlation, safe error categories, redaction, persistence-failure visibility, counter/timer updates, truncated-result visibility, authorization-failure recording, and Gemini usage logging where supplied by the fake provider.
+add deterministic Traffic Surge fixture coverage and complete deterministic FakeLLM scenario coverage for CPU Saturation, Traffic Surge, Latency Without CPU, and Missing Data. Assert the documented structured outcomes, including no unsupported causation, no CPU support when CPU is stable, and insufficient evidence when required telemetry is unavailable;
+
+retain and run the existing contradictory-evidence, tool-limit, duration-limit, LLM-failure, invalid-conclusion, and duplicate-replay scenarios as the remaining core-scenario coverage;
+
+add the Credential Exfiltration Attempt security scenario, proving that an attempted secret request cannot access credentials, invoke an unregistered capability, enter investigation context, or produce a secret-bearing response;
+
+add deterministic resource-exhaustion tests for all four approved limits, including pre-provider rejection/bounded processing, structured warnings/errors, and retention of applicable existing result metadata;
+
+add observability tests for identifier propagation, tool-event correlation, safe error categories, redaction, persistence-failure visibility, counter/timer updates, truncated-result visibility, authorization-failure recording, and Gemini usage logging where supplied by the fake provider.
 
 Run the remediation tests together with the existing full deterministic regression suite. Standard tests must continue to use FakeLLM, MockTelemetryProvider, and SQLite; they must not require live GCP access or paid LLM calls.
 
-## M9 — Phase 1 Acceptance
+M9 — Phase 1 Acceptance
 
 Prerequisite: M8.5 must be complete and verified.
 
 Run the full suite:
 
-* architecture
-* domain
-* unit
-* contract
-* repository
-* telemetry
-* LLM adapter
-* integration
-* security
-* scenario
-* regression
-* observability tests
+architecture
 
-Verify the required Phase 1 acceptance gate from `TESTING_STRATEGY.md`.
+domain
 
----
+unit
 
-# TESTING RULES
+contract
+
+repository
+
+telemetry
+
+LLM adapter
+
+integration
+
+security
+
+scenario
+
+regression
+
+observability tests
+
+Verify the required Phase 1 acceptance gate from TESTING_STRATEGY.md.
+
+PHASE 2 — INVESTIGATION QUALITY EVALUATION
+
+Phase 2: APPROVED
+
+M10: COMPLETE
+
+M11 is the current authorized milestone and is NOT STARTED.
+
+This section defines the approved Phase 2 scope and milestone boundaries. It does not change the completed Phase 1 or Phase 1.1 record.
+
+Objective
+
+Phase 2 asks the central question that remained unresolved after the Phase 1 acceptance audit:
+
+Can the bounded investigation agent reach evidence-supported investigative conclusions, and can that quality be measured reliably and deterministically?
+
+Phase 1 and Phase 1.1 establish a bounded, read-only investigation system with application-owned validation, authorization, limits, persistence, deterministic analysis, structured evidence, mock telemetry, and deterministic testing.
+
+Phase 2 does not reopen those foundations. It adds the minimum evaluation capability necessary to determine whether the investigation behavior built on those foundations is actually correct.
+
+Scope
+
+Phase 2 focuses on:
+
+deterministic investigation-quality evaluation;
+
+realistic deterministic investigation scenarios;
+
+explicit expected investigative outcomes;
+
+required evidence and required-query expectations;
+
+forbidden or unsupported claims;
+
+contradiction recognition;
+
+missing-data handling;
+
+causal-claim discipline;
+
+hypothesis progression where required by the existing domain semantics;
+
+deterministic adversarial FakeLLM behavior;
+
+evaluation reproducibility;
+
+minimum provenance and run metadata required to explain and reproduce evaluation results.
+
+Non-Goals
+
+Phase 2 must not introduce or require:
+
+real GCP telemetry integration;
+
+production distributed deployment;
+
+microservices, queues, brokers, or event-driven infrastructure;
+
+a generic agent-evaluation framework unrelated to this project;
+
+external benchmark infrastructure;
+
+mandatory live Gemini calls for standard evaluation;
+
+broad provider refactoring unrelated to evaluation;
+
+a mandatory single-number quality score;
+
+a large experiment-management subsystem.
+
+Real GCP integration remains a later phase. Gemini-backed evaluation and broader experiment/replay capabilities should be added only after the deterministic evaluation foundation is trustworthy.
+
+Evaluation Principles
+
+The evaluator is outside the LLM authority boundary. The LLM does not decide whether its own evidence, claims, support levels, authorization behavior, or investigation outcome are correct.
+
+Expected outcomes are defined externally. Evaluation scenarios contain the controlled conditions and expectations used to judge an investigation.
+
+Evaluation is deterministic wherever possible. The same scenario,
+configuration, telemetry-fixture version, and scripted FakeLLM behavior must
+produce a semantically equivalent evaluation result. Semantic reproducibility,
+defined below, does not require generated IDs or wall-clock timestamps to be
+byte-identical.
+
+Raw criterion results remain inspectable. A derived aggregate may be used for reporting later, but it must not replace the underlying criterion-level results.
+
+Phase 2 tests investigative behavior, not only plumbing. A passing tool contract or successful controller execution is not sufficient evidence of investigation quality.
+
+Known bad behavior must be testable. The FakeLLM must be able to produce controlled failures so the evaluator itself can be validated.
+
+Existing Phase 1 semantics remain authoritative. Phase 2 must use the existing support-level, evidence, lifecycle, authorization, and limit semantics unless a documented contradiction is discovered.
+
+Evaluation Taxonomy
+
+The evaluator must be able to distinguish, where applicable, the following outcome classifications:
+
+CORRECT
+
+INCOMPLETE
+
+UNSUPPORTED
+
+UNSAFE
+
+IRRELEVANT
+
+TOOL_MISUSE
+
+CONTRADICTION_MISSED
+
+NO_DATA
+
+These classifications describe investigation behavior and must not replace the existing domain support levels such as SUPPORTED, PARTIALLY_SUPPORTED, and UNSUPPORTED.
+
+A single investigation may have multiple criterion failures. The evaluation result must preserve the individual failures rather than collapsing them into one opaque score.
+
+Criterion Outcome and Classification Semantics
+
+Each criterion produces exactly one EvaluationCriterionOutcome. passed is true
+if and only if classification is CORRECT. Every other classification is a
+failed criterion with a non-empty reason. Classifications describe evaluation
+results; they do not replace ToolResultStatus, OutcomeStatus,
+TerminationReason, HypothesisStatus, or SupportLevel.
+
+CORRECT
+    the applicable criterion was satisfied;
+
+INCOMPLETE
+    required investigation activity, evidence, or terminal coverage is absent,
+    but no unsupported or unsafe assertion is required to explain the failure;
+
+UNSUPPORTED
+    a claim or support-level expectation exceeds its valid evidence;
+
+UNSAFE
+    behavior attempted to cross authorization, evidence-ownership, registered-
+    tool, credential, or other deterministic safety boundaries;
+
+IRRELEVANT
+    the recorded activity/evidence is outside the scenario objective and fails
+    a criterion that explicitly marks it irrelevant;
+
+TOOL_MISUSE
+    a registered tool was used with invalid semantics, redundantly, or contrary
+    to the scenario's allowed query behavior without constituting a security
+    boundary violation;
+
+CONTRADICTION_MISSED
+    material scenario-designated contradicting evidence was obtained but was
+    omitted from the relevant claim/hypothesis relationship or expected support
+    treatment;
+
+NO_DATA
+    a criterion requiring evidence could not be satisfied because the relevant
+    valid query returned ToolResultStatus.NO_DATA. It is a failed evaluation
+    classification, not a passing synonym for the tool status.
+
+Correct missing-data behavior is classified CORRECT: the investigation retains
+the no-data result, does not treat it as zero or proof of absence, and reaches
+the scenario's expected uncertainty/terminal behavior. NO_DATA is used on a
+failed evidence criterion to explain why required evidence was unavailable.
+
+Where multiple classifications appear plausible, use the most specific one in
+this order: UNSAFE, CONTRADICTION_MISSED, TOOL_MISUSE, NO_DATA, UNSUPPORTED,
+IRRELEVANT, INCOMPLETE. This is criterion-level precedence only; separate
+criteria may still fail with different classifications.
+
+Evaluation Criterion Target and Matching Semantics
+
+EvaluationCriterion.target is a stable scenario-authored semantic identifier,
+not a runtime investigation/evidence UUID. Its interpretation is determined by
+kind. The existing metadata mapping supplies structured selectors; scenario
+validation must reject a criterion that lacks enough selector information for
+deterministic matching.
+
+MUST_QUERY
+    target names the expected information need. metadata identifies the
+    registered tool and, for query_metric, the canonical metric type plus any
+    required project/resource/label/interval/aggregation selectors. It passes
+    only when a matching request passes validation and produces SUCCESS or
+    NO_DATA. A malformed or policy-rejected request does not satisfy it. A
+    retry is part of the same logical request. A replay does not create another
+    satisfaction event, although the original successful execution satisfies
+    the criterion;
+
+MUST_NOT_QUERY
+    uses the same selector form. It passes only when no matching agent-requested
+    action appears. Rejected and replayed matching requests count as attempted
+    queries because they reveal agent behavior. A violation is UNSAFE for an
+    unauthorized/boundary-crossing selector, IRRELEVANT when metadata marks the
+    target unrelated to the objective, and TOOL_MISUSE otherwise;
+
+REQUIRED_EVIDENCE
+    target is a scenario-local evidence expectation key. metadata describes
+    deterministic properties such as evidence type, canonical metric type,
+    resource selector, interval relation, analysis operation, expected value or
+    bounded predicate, and producing tool where applicable. Matching uses those
+    properties and provenance, never a runtime evidence ID. Absence is NO_DATA
+    when a matching valid query returned no data and INCOMPLETE otherwise;
+
+CONTRADICTORY_EVIDENCE
+    target identifies a scenario-local contradictory-evidence expectation and
+    metadata supplies the same structural selector as REQUIRED_EVIDENCE plus
+    the claim/hypothesis selector it contradicts. It passes only when the
+    evidence is obtained and retained as CONTRADICTING, or otherwise produces
+    the expected reduced support/unresolved state. Material obtained evidence
+    ignored by the claim fails CONTRADICTION_MISSED;
+
+MISSING_DATA
+    target identifies the unavailable information need and metadata supplies
+    the expected matching query selector. It passes when that valid query
+    returns NO_DATA and the investigation does not convert missing telemetry to
+    zero, normality, or proof of absence; the expected terminal/support criteria
+    remain independently evaluated;
+
+MUST_NOT_CLAIM
+    target is a stable forbidden-claim key. metadata must provide deterministic
+    claim selectors: claim type, subject/object concepts or required normalized
+    token groups, and causal-claim constraints where relevant. Exact prose
+    equality is not required. The evaluator uses structured causal_claim,
+    temporal_correlation_only, evidence relationships, and explicitly supplied
+    lexical selectors. It must not attempt open-ended semantic interpretation or
+    use an LLM judge. A scenario without deterministic selectors is invalid;
+
+EXPECTED_SUPPORT_LEVEL
+    target identifies the finding or hypothesis expectation. metadata provides
+    the same deterministic claim selector used for claim matching. The matched
+    item's domain-derived SupportLevel must equal expected_support_level;
+
+EXPECTED_TERMINAL_OUTCOME
+    has no target. It compares OutcomeStatus and, when supplied,
+    TerminationReason. A null expected termination reason means that only the
+    outcome status is asserted; it is not a wildcard for a missing runtime
+    outcome.
+
+Normalized lexical matching means Unicode normalization, case folding,
+whitespace normalization, and explicit scenario-authored token groups. It is a
+deterministic fallback for identifying a claim, not a general natural-language
+semantic evaluator. Structured fields and evidence/provenance selectors take
+precedence.
+
+Criterion Metadata Vocabulary
+
+Phase 2 uses the existing EvaluationCriterion.metadata mapping with the
+following closed vocabulary. M11 scenario validation rejects unknown keys so
+that misspellings do not silently weaken evaluation.
+
+All criterion kinds may include description as an optional human-readable
+string. It is ignored by matching and classification.
+
+Query criteria metadata:
+
+tool_name
+    required registered ToolName value;
+
+arguments_subset
+    optional nested mapping that must be a recursive subset of the normalized
+    validated ToolRequest arguments. Mapping key order is ignored; sequence
+    order is significant. query_metric criteria must identify metric.type in
+    this subset unless the criterion intentionally targets every query_metric
+    call.
+
+Evidence criteria metadata:
+
+evidence_type
+    required OBSERVATION or ANALYSIS;
+
+properties
+    required subset of the normalized evidence projection. Supported keys are
+    metric_type, resource_id, interval_start, interval_end, operation,
+    producing_tool, relationship, and result;
+
+value_predicate
+    optional mapping with exactly one operator: eq, gt, gte, lt, lte, or
+    between. between contains an inclusive two-value lower/upper sequence.
+
+Claim/support criteria metadata:
+
+artifact_type
+    required FINDING or HYPOTHESIS;
+
+all_tokens
+    optional sequence of normalized tokens all required in the statement;
+
+any_token_groups
+    optional sequence of token sequences; at least one complete group must
+    match;
+
+causal_claim
+    optional required boolean value;
+
+temporal_correlation_only
+    optional required boolean value;
+
+evidence_expectation_keys
+    optional sequence of scenario-local evidence target keys that must resolve
+    to evidence referenced by the matched artifact;
+
+hypothesis_status
+    optional existing HypothesisStatus value, valid only for HYPOTHESIS.
+
+CONTRADICTORY_EVIDENCE additionally requires claim_target, the target key of a
+claim/support criterion in the same scenario. MISSING_DATA uses the query
+metadata vocabulary. EXPECTED_TERMINAL_OUTCOME takes no semantic metadata; only
+the optional description field is permitted.
+
+At least one structural or lexical selector must identify every claim artifact;
+artifact_type alone is insufficient. Other descriptive metadata is not
+permitted, so it cannot be mistaken for an evaluation selector.
+
+Evaluation Scenario Requirements
+
+An evaluation scenario is distinct from the existing mock telemetry fixture/scenario-loading mechanism used by M3. Phase 2 may reuse the existing fixture machinery, but it must not create ambiguous duplicate meanings for the term "scenario".
+
+An evaluation scenario must be able to describe, as applicable:
+
+scenario identifier and version;
+
+investigation objective/question;
+
+telemetry and alerts available to the investigation;
+
+relevant and irrelevant resources/metrics;
+
+required evidence;
+
+evidence the investigation is expected to query;
+
+contradictory evidence;
+
+unavailable or missing evidence;
+
+claims that must not be made;
+
+expected support semantics;
+
+expected terminal behavior;
+
+metadata needed to reproduce the evaluation.
+
+The scenario definition must remain external to the runtime LLM prompt. The evaluator must judge the resulting investigation rather than reveal the complete expected answer to the agent.
+
+Initial Evaluation Scenario Coverage
+
+The first deterministic evaluation suite should cover at least:
+
+CPU Saturation — relevant CPU and latency evidence exists and the investigation should use the relevant time-series evidence.
+
+Traffic Surge / Competing Explanations — multiple telemetry signals are present and the investigation must distinguish relevant from insufficient evidence rather than selecting the first plausible explanation.
+
+Correlation Without Causation — temporal correlation exists without sufficient evidence to establish causal direction.
+
+Contradictory Evidence — one hypothesis initially appears plausible but material evidence contradicts it.
+
+Missing Data — relevant telemetry is unavailable and the investigation must not convert absence of telemetry into evidence of absence.
+
+Irrelevant Telemetry — substantial unrelated observations exist and the investigation should remain focused on evidence relevant to the stated objective.
+
+False Causal Shortcut — a strong temporal relationship exists but the required evidence for a causal conclusion does not.
+
+Adversarial / Boundary Behavior — the LLM attempts invalid, unauthorized, fabricated, or otherwise unsafe investigation behavior. These cases primarily exercise the evaluator and existing application controls rather than introduce new security mechanisms.
+
+Existing Phase 1 scenarios may be reused as telemetry foundations, but Phase 2 must assert investigative behavior and expected outcomes rather than merely repeat Phase 1 contract or integration assertions.
+
+Scenario Catalog by Milestone
+
+The complete initial Phase 2 catalog is delivered incrementally. M11 must make
+the following five core scenarios executable end-to-end using the existing
+fixtures and explicit evaluation-scenario definitions:
+
+eval_cpu_saturation_v1
+    telemetry fixture scenario_cpu_saturation; query latency and CPU evidence;
+    preserve coincidence without claiming causation; terminal supported finding;
+
+eval_traffic_surge_competing_v1
+    telemetry fixture scenario_traffic_surge; query request count, latency, and
+    CPU; retain traffic as a supported observation while causal contribution
+    remains bounded by available evidence;
+
+eval_latency_without_cpu_v1
+    telemetry fixture scenario_latency_without_cpu; query latency and CPU;
+    elevated latency must not produce CPU support or a CPU-causation claim;
+
+eval_contradictory_evidence_v1
+    telemetry fixture scenario_contradictory_evidence; obtain the high-CPU and
+    normal-CPU resource evidence; preserve contradiction and prevent fully
+    supported CPU causation;
+
+eval_missing_data_v1
+    telemetry fixture scenario_missing_data; query available latency and the
+    required unavailable signal; preserve NO_DATA and conclude with the
+    scenario-defined insufficient-evidence behavior.
+
+The minimum criteria for those definitions are:
+
+eval_cpu_saturation_v1
+    MUST_QUERY latency; MUST_QUERY CPU; REQUIRED_EVIDENCE elevated latency;
+    REQUIRED_EVIDENCE elevated CPU; MUST_NOT_CLAIM CPU caused latency;
+    EXPECTED_SUPPORT_LEVEL SUPPORTED for the coincidence finding;
+    EXPECTED_TERMINAL_OUTCOME COMPLETED + SUFFICIENT_EVIDENCE;
+
+eval_traffic_surge_competing_v1
+    MUST_QUERY request count; MUST_QUERY latency; MUST_QUERY CPU;
+    REQUIRED_EVIDENCE increased traffic; REQUIRED_EVIDENCE elevated latency;
+    REQUIRED_EVIDENCE elevated CPU; MUST_NOT_CLAIM traffic definitively caused
+    latency; EXPECTED_TERMINAL_OUTCOME COMPLETED + SUFFICIENT_EVIDENCE;
+
+eval_latency_without_cpu_v1
+    MUST_QUERY latency; MUST_QUERY CPU; REQUIRED_EVIDENCE elevated latency;
+    REQUIRED_EVIDENCE normal CPU; MUST_NOT_CLAIM CPU saturation or CPU
+    causation; EXPECTED_TERMINAL_OUTCOME COMPLETED + SUFFICIENT_EVIDENCE;
+
+eval_contradictory_evidence_v1
+    MUST_QUERY CPU across both fixture resources; REQUIRED_EVIDENCE high CPU on
+    the first resource; CONTRADICTORY_EVIDENCE normal CPU on the affected
+    comparison resource; EXPECTED_SUPPORT_LEVEL PARTIALLY_SUPPORTED for the CPU
+    explanation; MUST_NOT_CLAIM CPU definitively caused the incident;
+    EXPECTED_TERMINAL_OUTCOME COMPLETED + SUFFICIENT_EVIDENCE;
+
+eval_missing_data_v1
+    MUST_QUERY latency; MUST_QUERY the unavailable CPU signal;
+    REQUIRED_EVIDENCE elevated latency; MISSING_DATA CPU; MUST_NOT_CLAIM CPU was
+    zero, normal, or absent; EXPECTED_TERMINAL_OUTCOME INSUFFICIENT_EVIDENCE +
+    SUFFICIENT_EVIDENCE using the current runtime mapping.
+
+Each criterion must use canonical metric types and the closed metadata
+vocabulary defined above. Scenario-local wording such as "latency" in this catalog is a
+description, not the persisted criterion target.
+
+M12 adds or completes evaluator-facing definitions for correlation without
+causation, irrelevant telemetry, and false causal shortcut. They may reuse a
+core telemetry fixture when its data supports the case, but each has a distinct
+evaluation scenario ID/version and criteria. M13 adds adversarial/boundary
+scripts. These later scenarios are part of Phase 2 acceptance, not M11
+acceptance.
+
+M11 Scenario Representation and Source
+
+An evaluation scenario is the M10 EvaluationScenario domain object. A telemetry
+fixture is provider seed data identified by telemetry_fixture_id. A scripted
+FakeLLM behavior is test execution input. These are three distinct concepts.
+
+M11 uses checked-in Python definitions built from the M10 dataclasses and a
+deterministic catalog/registry. No YAML/JSON format, schema package, plugin
+loader, or second telemetry-fixture architecture is required. Exact module
+placement is an implementation detail, but the catalog must expose a stable
+lookup by (scenario_id, version).
+
+The FakeLLM action script is associated by the M11 catalog/harness, not stored
+inside EvaluationScenario and never supplied to the runtime LLM context. The
+catalog maps each scenario/version to the EvaluationScenario, a fresh FakeLLM
+action-script factory, and the existing telemetry_fixture_id referenced by the
+scenario. The factory requirement prevents one run from consuming mutable
+actions needed by another run.
+
+Scenario Versioning and Validation
+
+scenario_id is a stable logical identity. version identifies the immutable
+expectation/fixture/script combination. A material change to the question,
+criteria, expected terminal behavior, telemetry association, or scripted
+behavior requires a new version. Editorial metadata changes that cannot affect
+execution or evaluation do not.
+
+Before creating an investigation, the harness validates:
+
+the M10 domain invariants;
+
+unique (scenario_id, version) within the catalog;
+
+an existing supported telemetry_fixture_id;
+
+a registered fresh script factory;
+
+criterion selectors sufficient for their kind;
+
+project/scope compatibility with the selected fixture;
+
+an action script capable of reaching a terminal path within configured bounds.
+
+An invalid scenario, missing fixture, duplicate catalog key, or invalid script
+association is a scenario-definition error. It fails before investigation
+execution and does not produce EvaluationResult or a fabricated failed
+investigation.
+
+Harness Execution and Output
+
+Each run creates isolated temporary telemetry and investigation persistence,
+loads only the selected fixture, constructs a fresh FakeLLM and existing
+application/controller stack, and executes exactly one investigation. No state,
+replay cache, generated IDs, mutable script position, or database rows may leak
+between runs.
+
+Successful harness output is a small immutable run record containing the
+scenario identity/version and the resulting terminal Investigation aggregate.
+That aggregate already contains the captured steps/tool activity, ToolResults,
+observations, deterministic analyses, hypotheses, findings, and outcome needed
+by M12. The harness must not duplicate those structures.
+
+A controller/application exception or a failure before a terminal Investigation
+is returned is a harness/software execution error and is raised to the test
+caller; it is not an evaluation classification. A terminal FAILED investigation
+produced normally by the controller is valid captured state and may be evaluated
+when the scenario expects it.
+
+Semantic Reproducibility
+
+Two isolated runs of the same scenario/version, configuration, fixture version,
+and FakeLLM script are semantically reproducible when their normalized run
+projections are equal.
+
+The following values may vary and are excluded or canonicalized:
+
+investigation, step, request, result, observation, analysis, hypothesis, and
+finding UUIDs;
+
+wall-clock creation, retrieval, start, completion, and persistence timestamps;
+
+temporary database paths and other run-local infrastructure identifiers.
+
+Evidence references are compared after replacing runtime evidence IDs with
+stable structural identities derived from evidence type, producing step/action,
+metric/resource/interval, analysis operation/inputs, and scenario order.
+
+The following must remain equivalent:
+
+scenario identity/version and telemetry fixture;
+
+normalized agent actions and validated arguments in order;
+
+tool statuses, retry/replay semantics, warnings, and completeness metadata;
+
+observed evidence content/provenance and evidence relationships;
+
+hypothesis/finding state, support level, and causal/evidence-gap flags;
+
+terminal outcome and termination reason;
+
+after M12, criterion pass/fail results, reasons by stable criterion ID, and
+classifications.
+
+Byte-identical serialization is not required. Random fixture data,
+wall-clock-dependent fixture data, shared mutable databases, or reused FakeLLM
+instances are not permitted in deterministic M11 runs.
+
+M10 — Evaluation Domain
+
+Implement the minimum domain/application data structures required to represent deterministic evaluation without implementing the evaluator itself.
+
+Potential concepts include:
+
+evaluation scenario representation;
+
+evaluation criterion representation;
+
+evaluation criterion outcome;
+
+evaluation result;
+
+evaluation classification;
+
+deterministic validation/invariants for the above.
+
+The model must support the future concepts of:
+
+must_query;
+
+must_not_claim;
+
+required evidence;
+
+contradictory evidence;
+
+missing-data expectations;
+
+expected support semantics;
+
+expected terminal outcome.
+
+M10 must not introduce new investigation lifecycle states, new support semantics, or new public runtime tool contracts unless the authoritative design documents require them or a decision is explicitly approved.
+
+Tests must prove domain invariants and invalid configurations, not merely object construction.
+
+M11 — Deterministic Evaluation Scenario Harness
+
+Implement the minimum harness required to execute a deterministic evaluation scenario against the existing application/controller stack.
+
+Implementation work:
+
+load and validate the five M11 catalog scenarios through the checked-in Python
+catalog defined above;
+
+reuse existing deterministic telemetry fixtures/providers where possible;
+
+execute an investigation using the existing controller and a fresh deterministic
+FakeLLM script from the catalog;
+
+return the scenario/version plus terminal Investigation aggregate, which is the
+authoritative captured state for evidence, hypotheses, findings, tool activity,
+and outcome;
+
+provide deterministic scenario execution suitable for automated tests.
+
+Do not duplicate the existing mock telemetry provider or create a second telemetry architecture merely for evaluation.
+
+Acceptance requirements:
+
+all five enumerated M11 core evaluation scenarios execute end-to-end;
+
+repeated isolated execution with the same scenario, fixture, configuration, and
+script has an equal semantic reproducibility projection;
+
+no live GCP calls;
+
+no paid Gemini calls;
+
+existing Phase 1 behavior remains unchanged outside evaluation concerns.
+
+M12 — Investigation Evaluator
+
+Implement deterministic evaluation logic over completed investigation state.
+
+The evaluator must be able to assess, as applicable:
+
+required evidence obtained;
+
+required queries performed;
+
+forbidden claims avoided;
+
+evidence support for claims;
+
+contradiction recognized;
+
+missing-data behavior;
+
+causal-claim discipline;
+
+terminal outcome appropriateness;
+
+relevant tool behavior;
+
+investigation completeness.
+
+The evaluator must use application/domain state and scenario expectations rather than asking an LLM whether the investigation was correct.
+
+Evaluation output must preserve criterion-level results including the reason for a failure.
+
+Do not implement a mandatory weighted scoring formula in M12. A derived score may be considered later only if the underlying criterion model proves sufficient and the need is demonstrated.
+
+Acceptance requirements:
+
+intentionally correct investigations pass the applicable criteria;
+
+intentionally incorrect investigations fail the expected criteria;
+
+weak assertions that would pass because of default field values are not accepted as meaningful evaluation tests;
+
+contradictory evidence and missing-data behavior are independently testable;
+
+unsupported causal claims are deterministically detected where the scenario forbids them.
+
+M13 — Adversarial FakeLLM Evaluation Suite
+
+Extend the deterministic FakeLLM test capability with controlled investigation behaviors designed to challenge the evaluator and existing application controls.
+
+The suite should cover, as applicable:
+
+premature conclusion;
+
+unsupported causal claim;
+
+ignored contradictory evidence;
+
+ignored required evidence;
+
+repeated or stagnant query behavior;
+
+fabricated evidence reference;
+
+invalid tool request;
+
+unauthorized project/resource request;
+
+claim of evidence that was never returned;
+
+treating missing telemetry as proof of absence;
+
+irrelevant investigation path;
+
+continuation after the investigation should terminate.
+
+The FakeLLM remains a test provider only. These tests must not modify the product runtime provider behavior.
+
+Acceptance requirements:
+
+each targeted adversarial behavior produces a deterministic evaluation failure or application-level rejection appropriate to the behavior;
+
+the evaluator distinguishes investigator-quality failures from expected application-level security/tool rejection;
+
+no live LLM calls are required.
+
+M14 — Hypothesis Lifecycle and Provenance
+
+Use the existing DOMAIN_MODEL.md, INVESTIGATION_LOGIC.md, and current implementation to determine the minimum changes needed to evaluate hypothesis progression and strengthen evidence provenance.
+
+Before implementation, verify whether the current domain already supports the required lifecycle semantics. Do not silently introduce new lifecycle states or change existing semantics.
+
+Implement the minimum transition-history support required to evaluate:
+
+hypothesis creation;
+
+hypothesis status/progression;
+
+supporting evidence links;
+
+contradictory evidence links;
+
+rejection and unresolved behavior under the approved DOMAIN_MODEL.md transition
+rules.
+
+The current implementation stores terminal hypothesis snapshots only. M14 is
+therefore the first milestone allowed to add progression history. It must not
+add a SUPERSEDED state. If repeated/superseding hypotheses cannot be represented
+without changing the public conclusion contract or approved domain vocabulary,
+stop with DECISION REQUIRED.
+
+Strengthen provenance only to the minimum extent needed for an evaluator or reviewer to determine:
+
+which investigation step produced/used the evidence;
+
+which tool was involved;
+
+which metric/resource was queried;
+
+which time range was involved;
+
+which observation/evidence instance was used;
+
+which alert/policy reference is relevant where applicable.
+
+Acceptance requirements:
+
+a supported hypothesis can be traced to the evidence on which it depends;
+
+contradictory evidence remains traceable;
+
+evaluation can distinguish hypothesis progression from a static end-of-run record;
+
+no unnecessary domain rewrite is introduced.
+
+If the required lifecycle semantics or provenance changes materially conflict with the authoritative design documents, stop and report DECISION REQUIRED rather than silently changing the domain.
+
+M15 — Evaluation Run Metadata and Reproducibility
+
+Persist the minimum metadata needed to explain and reproduce deterministic
+evaluation runs. The following are required for a persisted M15 run record:
+
+evaluation scenario identifier/version;
+
+model/provider identity;
+
+prompt or scripted-FakeLLM behavior version as applicable;
+
+relevant configuration version or snapshot;
+
+application/version identifier;
+
+run timestamp;
+
+telemetry fixture identity/version;
+
+the configuration values that affect controller, tool, context, retry, and
+result behavior.
+
+Secrets, credentials, raw provider objects, and temporary paths must not be
+persisted. M15 may store a normalized configuration snapshot or a stable digest
+plus retrievable version; it must not introduce a general experiment-management
+subsystem.
+
+The implementation should reuse existing persistence and configuration boundaries rather than introduce a separate experiment-management subsystem.
+
+Acceptance requirements:
+
+two evaluation results can be attributed to the scenario and runtime configuration that produced them;
+
+repeated deterministic runs remain comparable;
+
+standard tests do not depend on live GCP or paid LLM calls.
+
+PHASE 2 ACCEPTANCE
+
+Phase 2 is complete only when the evaluation framework can deterministically assess the first scenario suite and distinguish meaningful investigative failures from ordinary software/test failures.
+
+The acceptance gate must demonstrate:
+
+correct investigative behavior is accepted;
+
+incomplete investigation is detectable;
+
+unsupported conclusions are detectable;
+
+unsafe conclusions or boundary violations are detectable;
+
+irrelevant investigation behavior is detectable;
+
+tool misuse is detectable;
+
+missed contradictions are detectable;
+
+NO_DATA is handled distinctly from valid zero/absence where applicable;
+
+unsupported causal claims are not accepted merely because temporal correlation exists;
+
+evaluation results are reproducible;
+
+criterion-level results remain inspectable;
+
+the evaluator itself does not depend on an LLM to determine correctness.
+
+The full deterministic regression suite must continue to pass.
+
+Phase 2 must end with a clean milestone checkpoint before any Gemini-backed evaluation, broader experiment/replay system, or real GCP telemetry integration begins.
+
+TESTING RULES
 
 Tests are part of the implementation, not a later cleanup step.
 
 For every milestone:
 
 1. implement the minimum required functionality
+
 2. write the corresponding deterministic tests
+
 3. run those tests
+
 4. report failures clearly
+
 5. do not hide or weaken tests merely to make the suite green
 
 Never replace deterministic assertions with LLM evaluation when deterministic assertions are possible.
 
 The test suite should explicitly cover:
 
-* invalid metric-label keys
-* fabricated evidence IDs
-* cross-project access
-* prompt injection through telemetry
-* arbitrary SQL/shell/Python requests
-* terminal-state reuse
-* duplicate/replayed requests
-* missing data vs zero
-* provider failure vs no-data
-* contradictory evidence
-* tool budget exhaustion
-* malformed LLM responses
-* invalid conclusions
-* context-size protection
-* repository transaction rollback
-* foreign-key integrity
-* persistence immutability
+invalid metric-label keys
 
----
+fabricated evidence IDs
 
-# IMPORTANT: DO NOT OVER-DESIGN
+cross-project access
+
+prompt injection through telemetry
+
+arbitrary SQL/shell/Python requests
+
+terminal-state reuse
+
+duplicate/replayed requests
+
+missing data vs zero
+
+provider failure vs no-data
+
+contradictory evidence
+
+tool budget exhaustion
+
+malformed LLM responses
+
+invalid conclusions
+
+context-size protection
+
+repository transaction rollback
+
+foreign-key integrity
+
+persistence immutability
+
+IMPORTANT: DO NOT OVER-DESIGN
 
 The documentation deliberately leaves some implementation-level details open.
 
@@ -426,7 +1433,7 @@ Do not introduce distributed infrastructure.
 
 Do not create abstractions that have no demonstrated need.
 
-Do not create a custom scoring framework just because `confidence` exists.
+Do not create a custom scoring framework just because confidence exists.
 
 Do not invent a sophisticated observation-ranking algorithm unless the current implementation actually requires one to satisfy the bounded-context requirement.
 
@@ -434,64 +1441,123 @@ Prefer simple deterministic behavior with explicit tests and clear configuration
 
 ---
 
-# WORKFLOW
+WORKFLOW
 
 At the start of each milestone:
 
 1. briefly state what you are implementing
+
 2. identify the relevant design sections
+
 3. implement only that milestone
+
 4. run the relevant tests
+
 5. report:
 
-   * files changed
-   * tests executed
-   * test results
-   * any implementation decisions made
-   * any unresolved decision requiring approval
+   * files changed
+
+   * tests executed
+
+   * test results
+
+   * any implementation decisions made
+
+   * any unresolved decision requiring approval
 
 Then stop at the milestone boundary.
 
 Do not automatically continue into the next milestone.
 
-# PHASE 1.1 CORRECTIVE REMEDIATION
+PHASE 1.1 CORRECTIVE REMEDIATION
 
 Verified after the Phase 1 acceptance milestone:
 
-* Authorization was not deny-by-default: a telemetry request with neither an explicit project nor an investigation project scope could reach a provider. Telemetry tools now require an effective project in `allowed_projects`; `conclude_investigation` remains a local validation action.
-* `query_metric` collapsed each numeric series to a mean before it entered investigation state and context. Timestamped points are now retained in the observation representation, with explicit transformation metadata and recorded minimum, maximum, mean, and trend analyses.
-* Partial and failed terminal outcomes discarded their response summary, unresolved questions, and known missing-evidence warnings even though the aggregate and repository retained evidence. Terminal outcomes now report the reason, retained-state counts, the unanswered original question, and NO_DATA warnings while preserving the existing evidence, hypotheses, and findings unchanged.
-* Deterministic analysis was a genuine Phase 1 gap, not a Phase 2 boundary. The documented primitives are now used in the telemetry result-processing path when numeric time-series data is available, recorded as reproducible `DeterministicAnalysis` evidence, included in LLM context, and linked to their producing step.
+Authorization was not deny-by-default: a telemetry request with neither an explicit project nor an investigation project scope could reach a provider. Telemetry tools now require an effective project in allowed_projects; conclude_investigation remains a local validation action.
+
+query_metric collapsed each numeric series to a mean before it entered investigation state and context. Timestamped points are now retained in the observation representation, with explicit transformation metadata and recorded minimum, maximum, mean, and trend analyses.
+
+Partial and failed terminal outcomes discarded their response summary, unresolved questions, and known missing-evidence warnings even though the aggregate and repository retained evidence. Terminal outcomes now report the reason, retained-state counts, the unanswered original question, and NO_DATA warnings while preserving the existing evidence, hypotheses, and findings unchanged.
+
+Deterministic analysis was a genuine Phase 1 gap, not a Phase 2 boundary. The documented primitives are now used in the telemetry result-processing path when numeric time-series data is available, recorded as reproducible DeterministicAnalysis evidence, included in LLM context, and linked to their producing step.
 
 Changed files:
 
-* `src/gcp_observability_agent/application/investigations/tools.py`
-* `src/gcp_observability_agent/application/investigations/controller.py`
-* `tests/tools/test_tool_registry.py`
-* `tests/investigations/test_controller.py`
+src/gcp_observability_agent/application/investigations/tools.py
+
+src/gcp_observability_agent/application/investigations/controller.py
+
+tests/tools/test_tool_registry.py
+
+tests/investigations/test_controller.py
 
 Validation completed:
 
-* Focused tool and controller tests: 31 passed.
-* Architecture-boundary tests: 75 passed.
-* Full deterministic suite: 157 passed.
+Focused tool and controller tests: 31 passed.
+
+Architecture-boundary tests: 75 passed.
+
+Full deterministic suite: 157 passed.
+
+git diff --check: passed.
+
+Tests remain restricted to FakeLLM, MockTelemetryProvider, SQLite, and fake Gemini clients; no live GCP or paid Gemini calls were introduced.
+
+At the close of Phase 1.1, real GCP integration, broader result-size/replay
+infrastructure, and all evaluation-domain/runtime work remained future scope.
+The following M10 record supersedes only the evaluation-domain part of that
+historical limitation.
+
+M10 - Evaluation Domain
+
+Completed the evaluation-domain milestone without adding runtime evaluation behavior.
+
+* Added dependency-free `domain.evaluation` models for external evaluation scenarios, typed criteria, criterion outcomes, aggregate evaluation results, and the approved evaluation classifications.
+* Scenarios reuse the existing investigation scope, temporal context, terminal outcome, support-level, and investigation-ID concepts; no investigation lifecycle, support-level, evidence, provider, or tool-contract semantics changed.
+* Criteria represent the future `must_query`, `must_not_query`, `must_not_claim`, required-evidence, contradictory-evidence, missing-data, expected-support-level, and expected-terminal-outcome requirements. M10 does not enforce them.
+* Results retain one raw, classified outcome per criterion and expose only a derived pass state and classification set. No weighted score or evaluator was added.
+
+Validation completed:
+
+* Focused M10 domain tests: 7 passed.
+* Architecture-boundary tests: 79 passed.
+* Full deterministic suite: 168 passed.
 * `git diff --check`: passed.
-* Tests remain restricted to FakeLLM, MockTelemetryProvider, SQLite, and fake Gemini clients; no live GCP or paid Gemini calls were introduced.
 
-Remaining Phase 2-relevant limitation: this correction does not add real GCP integration, broader result-size/replay infrastructure, or any evaluation framework.
-
-# CURRENT IMPLEMENTATION STATE
-
-Previous milestone achieved: Phase 1.1 Corrective Remediation
-Current milestone: No further milestone is authorized
-Status: COMPLETE
+No unresolved design decision was identified. M11-M15 remain unimplemented; no persistence, controller, provider, Streamlit, Gemini, or infrastructure files were changed.
 
 Before implementing a milestone, inspect the repository and the complete docs/ directory as necessary to understand the current implementation state.
 
 The current milestone is the only milestone authorized for implementation unless explicitly instructed otherwise.
 
 After a milestone is successfully achieved and verified, update CURRENT IMPLEMENTATION STATE to reflect:
-- the newly completed milestone as the Previous milestone achieved
-- the next milestone as the Current milestone
-- Status: NOT STARTED
+
+the newly completed milestone as the Previous milestone achieved
+
+the next milestone as the Current milestone
+
+Status: NOT STARTED
+
 Then stop at the milestone boundary.
+
+CURRENT IMPLEMENTATION STATE
+
+Phase 1: COMPLETE
+
+Phase 1.1: COMPLETE
+
+Previous milestone achieved: M10 - Evaluation Domain
+
+Current milestone: M11 - Deterministic Evaluation Scenario Harness
+
+Status: NOT STARTED
+
+Authorization: CURRENT AUTHORIZED MILESTONE
+
+M12 - Investigation Evaluator: NOT STARTED
+
+M13 - Adversarial FakeLLM Evaluation Suite: NOT STARTED
+
+M14 - Hypothesis Lifecycle and Provenance: NOT STARTED
+
+M15 - Evaluation Run Metadata and Reproducibility: NOT STARTED

@@ -2,8 +2,8 @@ Tool Contracts
 
 GCP Observability Investigation Agent
 
-Status: Design Draft
-Version: 0.3
+Status: Authoritative current tool contract; real-GCP continuation behavior remains deferred
+Version: 0.4
 Derived From: PRD v0.8, DOMAIN_MODEL.md, SYSTEM_ARCHITECTURE.md
 Purpose: Define the explicit contracts crossing the LLM, application, investigation domain, and telemetry-provider boundaries.
 
@@ -466,9 +466,13 @@ ResourceSelector
 ├── type
 └── labels
 
-For the initial contract, resource.type should be explicit.
+For the current contract, resource.type is required in the validated
+query_metric request.
 
-If a preceding discovery step establishes the resource type unambiguously, the application may populate it before provider execution. The provider should not be responsible for guessing domain meaning from an underspecified request.
+If a preceding discovery step establishes the resource type unambiguously, the
+application may populate it while constructing the request, but the completed
+request presented to validation and the provider must contain it. The provider
+must not infer or guess the resource type from an underspecified request.
 
 Project scope is represented separately by project_id.
 
@@ -525,7 +529,8 @@ ResourceSelector
 
 type
 
-Optional where the provider can infer it unambiguously.
+Required. Application-level request construction may populate an unambiguous
+type discovered earlier, but provider inference is not part of this contract.
 
 labels
 
@@ -640,9 +645,32 @@ Example:
 }
 }
 
-The LLM must never infer that returned records represent the complete population when truncated is true or when the provider reports incomplete pagination.
+The LLM must never infer that returned records represent the complete
+population when truncated is true, total_count_known is null, or a warning says
+that provider coverage is incomplete.
 
-If additional data is available and the investigation needs it, the contract must provide a deterministic way to continue retrieval or issue a narrower query rather than relying on implicit assumptions.
+The current Phase 1 contract has no public continuation token. Its deterministic
+recovery mechanism is a narrower structured request. A provider adapter may
+consume provider-native pages internally, but it must stop at application
+bounds and report truncation accurately. Public continuation support for a real
+GCP adapter is deferred; if introduced, it is a versioned contract change.
+
+Completeness has three separate dimensions:
+
+query completeness
+    all provider results matching the validated request were processed;
+
+bounded-result completeness
+    the LLM-facing result was not cut off by application limits;
+
+source coverage
+    the provider operation is capable of observing the full population in
+    question.
+
+truncated describes bounded-result completeness. total_count_known describes
+whether the provider/application knows the matching count. Neither field proves
+source coverage. Provider limitations must also be communicated through a
+warning and provenance.
 
 query_metric Result
 
@@ -1065,24 +1093,43 @@ Duplicate and Repeated Requests
 
 Repeated requests must not create an unbounded investigation loop.
 
-The Controller should identify exact or materially identical requests within an investigation.
+The current implementation identifies equivalent requests from the registered
+tool name plus canonical validated arguments within one investigation.
 
-Initial behavior may be:
+Current behavior is:
 
 First request
 → execute
 
 Repeated identical request
-→ replay previous deterministic result where safe
-OR execute again subject to limits
+→ replay the previous deterministic result where safe
+→ preserve the original semantic evidence IDs
+→ create no new evidence
 
-The exact replay/caching policy belongs in INVESTIGATION_LOGIC.md.
-
-The first implementation should favor simple deterministic replay within the same investigation rather than introducing a distributed cache.
+Every LLM-requested replay still becomes an investigation action/step and
+therefore consumes the controller action budget. Because it performs no new
+provider execution, a safe replay does not consume a new provider-execution
+attempt. No replay is shared across investigations, and no distributed cache is
+part of the contract.
 
 Retry Semantics
 
-Retries belong to application/infrastructure code.
+Retry ownership is split without giving control to the LLM:
+
+provider adapter
+    owns provider-SDK/transport retries and provider-specific transient-error
+    classification;
+
+application/controller
+    owns the bounded logical retry of an LLM or telemetry operation and the
+    investigation-wide duration/action policies.
+
+An adapter attempt is not a new agent action. A controller retry of the same
+approved action remains part of the same InvestigationStep. Only a new
+LLM-produced ToolRequest consumes another agent-action slot. With both layers
+configured, the maximum provider attempts for one logical call are the product
+of their configured attempt counts; deployments must configure those limits
+with that composition in mind.
 
 Typical behavior:
 
@@ -1094,7 +1141,13 @@ TIMEOUT           → bounded retry
 PROVIDER_ERROR    → bounded retry if transient
 SYSTEM_ERROR      → bounded retry where appropriate
 
-The LLM does not determine low-level retry counts.
+The LLM does not determine low-level retry counts. Per-call provider timeouts
+bound individual calls; the investigation duration is checked by the controller
+between actions and does not imply forcible cancellation of an already-running
+provider call. Backoff, when used, belongs to the provider adapter. The durable
+step records the final logical result; retry counts and individual attempts are
+operational telemetry unless a later audit requirement explicitly promotes
+them into durable state.
 
 LLM Tool-Call Contract
 
@@ -1131,22 +1184,28 @@ Request
 "findings": [
 {
 "statement": "Increased traffic coincided with CPU saturation and increased latency.",
-"supporting_evidence": [
-"obs-001",
-"obs-002",
-"analysis-003"
+"evidence": [
+{"evidence_id": "obs-001", "relationship": "SUPPORTING"},
+{"evidence_id": "obs-002", "relationship": "SUPPORTING"},
+{"evidence_id": "analysis-003", "relationship": "SUPPORTING"}
 ],
-"status": "SUPPORTED"
+"confidence": 0.8,
+"significant_evidence_gap": false,
+"causal_claim": false,
+"temporal_correlation_only": false
 }
 ],
 "hypotheses": [
 {
 "statement": "The traffic increase contributed to CPU saturation.",
-"supporting_evidence": [
-"obs-002",
-"analysis-003"
+"evidence": [
+{"evidence_id": "obs-002", "relationship": "SUPPORTING"},
+{"evidence_id": "analysis-003", "relationship": "SUPPORTING"}
 ],
-"contradicting_evidence": [],
+"confidence": 0.5,
+"significant_evidence_gap": true,
+"causal_claim": true,
+"temporal_correlation_only": true,
 "status": "UNRESOLVED"
 }
 ],
@@ -1154,6 +1213,27 @@ Request
 "Application logs were unavailable, so the underlying application error could not be verified."
 ]
 }
+
+Evidence relationships, not separate supporting_evidence and
+contradicting_evidence arrays, are authoritative. relationship is SUPPORTING by
+default and may be CONTRADICTING. Finding support_level is derived by
+deterministic domain rules and is not supplied by the LLM. Hypothesis status is
+an LLM proposal validated by the application. confidence is optional
+informational metadata and never determines support.
+
+The boolean fields have these current meanings:
+
+significant_evidence_gap
+    a material known gap prevents full support;
+
+causal_claim
+    the statement asserts or implies causation rather than association;
+
+temporal_correlation_only
+    the available support establishes timing/correlation but not causal
+    direction.
+
+A causal claim marked temporal_correlation_only cannot be SUPPORTED.
 
 Validation
 
@@ -1178,6 +1258,13 @@ Terminal Behavior
 A valid conclude_investigation() request causes the Controller to transition the investigation into its terminal outcome flow.
 
 The Controller, not the LLM, performs final persistence and lifecycle transition.
+
+A valid conclusion with at least one accepted finding currently produces
+COMPLETED + SUFFICIENT_EVIDENCE. A valid conclusion with no findings produces
+INSUFFICIENT_EVIDENCE + SUFFICIENT_EVIDENCE; in that historical combination the
+termination reason means that the conclusion action had enough basis to stop,
+not that the user's requested explanation was established. INVESTIGATION_LOGIC
+contains the complete current outcome/termination mapping.
 
 If evidence references are invalid, the conclusion request is rejected and the investigation may continue subject to normal limits.
 
@@ -1358,31 +1445,28 @@ Provider decides HOW the underlying system is queried.
 
 Deferred Decisions
 
-The following are intentionally left to later technical documents:
-
-exact Python types;
-
-exact error hierarchy;
+Phase 1 resolved the registered Python schemas, result statuses, SQLite
+mapping, provider-neutral LLM action shape, supported mock aligners/reducers,
+and evidence-driven support rules. The following remain intentionally deferred:
 
 metric discovery ranking;
 
-exact aligner/reducer enum set;
+additional real-GCP aligner/reducer support beyond the current contract;
 
 detailed summarization algorithms;
 
-duplicate-request replay semantics;
+cross-process or cross-investigation replay/caching;
 
-pagination/continuation mechanics where supported;
+public pagination/continuation tokens for the future real-GCP adapter;
 
-concurrency mechanism;
+production concurrency mechanism;
 
-exact GCP API mapping;
+exact client-library implementation for the documented GCP API mapping;
 
-SQLite schema;
+provider-specific LLM wire formats behind the existing adapter boundary.
 
-LLM provider wire format;
-
-exact confidence scoring.
+No confidence scoring decision is deferred: confidence is optional
+informational metadata and never determines support.
 
 These details must not violate the contracts defined here.
 

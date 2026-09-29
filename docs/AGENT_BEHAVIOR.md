@@ -1,8 +1,8 @@
-Agent Behaviour
+Agent Behavior
 
 GCP Observability Investigation Agent
 
-Status: Design Draft
+Status: Authoritative current agent behavior; Phase 2 evaluation behavior is defined in IMPLEMENTATION_PLAN.md
 Derived From: PRD v0.8, DOMAIN_MODEL.md, SYSTEM_ARCHITECTURE.md, TOOL_CONTRACTS v0.3, DATA_MODEL.md, INVESTIGATION_LOGIC.md
 Purpose: Define the behavioral contract for the LLM component, including system instructions, tool-selection rules, evidence discipline, recovery behavior, context construction, and final response behavior.
 
@@ -374,6 +374,11 @@ truncated = true
 
 the agent must not treat the result as a complete population.
 
+Likewise, total_count_known = null or a provider-coverage warning means that the
+agent cannot claim a complete inventory. truncated=false proves only that the
+bounded query result was consumed; it does not override a documented source
+coverage limitation such as telemetry-backed GCP resource discovery.
+
 If:
 
 transformed = true
@@ -714,6 +719,18 @@ are deployment configuration rather than domain behavior.
 
 The application should prefer low-variance configuration where consistent tool selection is beneficial.
 
+The current provider contract returns one structured ToolRequest per call.
+Provider timeouts and malformed/provider failures are surfaced as safe adapter
+exceptions; the controller, not the model, determines whether a logical retry
+is allowed. Optional provider usage metadata is operational telemetry and does
+not become evidence or reasoning state.
+
+For deterministic FakeLLM evaluation, the script version is the prompt/behavior
+identity. For future real-model evaluation, M15 records provider, model, prompt
+or instruction version, and behavior-affecting configuration. Those metadata
+requirements do not imply that model identity or usage must be added to the
+Phase 1 domain or public tool contracts.
+
 34. Behavioral Evaluation
 
 Evaluate the agent on:
@@ -747,10 +764,12 @@ Example:
   "findings": [
     {
       "statement": "Increased traffic coincided with CPU saturation and increased latency.",
-      "supporting_evidence": [
-        "obs-001",
-        "analysis-002"
-      ]
+      "evidence": [
+        {"evidence_id": "obs-001", "relationship": "SUPPORTING"},
+        {"evidence_id": "analysis-002", "relationship": "SUPPORTING"}
+      ],
+      "causal_claim": false,
+      "temporal_correlation_only": false
     }
   ],
   "hypotheses": [],

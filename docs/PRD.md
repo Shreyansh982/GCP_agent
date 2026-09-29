@@ -1171,7 +1171,8 @@ Explicit Python controller/state
 
 LLM
 
-Provider to be selected
+Google Gemini through the provider-neutral LLMProvider boundary (selected by
+the approved implementation plan after this PRD was frozen)
 
 Tool calling
 
