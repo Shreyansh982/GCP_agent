@@ -2,8 +2,9 @@ Implementation Plan
 
 GCP Observability Investigation Agent
 
-Status: Phase 1 and Phase 1.1 complete; M10 complete; M11 is the current
-authorized milestone and has not started.
+Status: Phase 1 and Phase 1.1 complete; M10 complete; the Pre-M11 Conformance
+Gate is the current authorized milestone and has not started. M11 is blocked
+until the gate is complete.
 
 This document is both the controlled milestone plan and a historical completion
 record. Instructions for completed milestones describe the requirements that
@@ -552,7 +553,8 @@ Phase 2: APPROVED
 
 M10: COMPLETE
 
-M11 is the current authorized milestone and is NOT STARTED.
+The Pre-M11 Conformance Gate is the current authorized milestone and is NOT
+STARTED. M11 is blocked until the gate is complete.
 
 This section defines the approved Phase 2 scope and milestone boundaries. It does not change the completed Phase 1 or Phase 1.1 record.
 
@@ -1128,7 +1130,132 @@ M10 must not introduce new investigation lifecycle states, new support semantics
 
 Tests must prove domain invariants and invalid configurations, not merely object construction.
 
+Pre-M11 Conformance Gate
+
+Status: NOT STARTED — CURRENT AUTHORIZED MILESTONE
+
+This bounded corrective gate follows completed M10 and precedes M11. It is not
+a new product phase, does not replace M11, and does not reopen the completed
+Phase 1, Phase 1.1, M10, or Phase B documentation record. Its only purpose is
+to correct current implementation defects that would make M11 unsafe,
+unbounded, non-reproducible, or semantically misleading.
+
+Objective
+
+Correct only the current implementation defects that would compromise:
+
+authorization;
+
+bounded execution;
+
+deterministic behavior;
+
+retry/replay consistency;
+
+persistence integrity;
+
+domain consistency;
+
+evaluation-relevant provenance;
+
+M10 immutability.
+
+In Scope
+
+Implement the minimum corrections required for:
+
+full-scope authorization;
+
+strict rejection of tool requests containing unknown schema fields;
+
+complete scope-aware semantic validation;
+
+actual provider-result and investigation-context bounding;
+
+separate accounting for logical LLM actions and internal provider attempts;
+
+retry/replay convergence on one final logical result;
+
+hypothesis status/support validation;
+
+outcome and investigation-step invariants required by the current semantics;
+
+deep immutability of evaluation-relevant structures;
+
+lossless persistence round trips for required relationships;
+
+explicit duplicate-ID conflict handling and idempotency semantics;
+
+essential structured provenance;
+
+deterministic mock-provider limit and filter behavior;
+
+focused regression tests for these corrections.
+
+The gate must not expand into:
+
+M12 evaluator work;
+
+M13 adversarial evaluation;
+
+M14 lifecycle redesign;
+
+M15 evaluation-run persistence;
+
+real GCP integration;
+
+production deployment.
+
+Exact-Resource Binding Rule
+
+When `InvestigationScope.resource_id` is populated, the application must inject
+the exact-resource constraint into every applicable provider request before
+provider execution. The LLM must not be able to broaden, replace, or remove
+that constraint. Do not add a new public LLM-controlled resource-ID field
+unless an explicit contradiction is discovered and reported for human
+decision. The provider-neutral representation remains an implementation detail
+to resolve during the conformance implementation.
+
+Hypothesis Consistency Rule
+
+A hypothesis proposal whose requested status is stronger than its
+evidence-derived support is invalid and must be rejected. It must not be
+silently weakened or admitted as authoritative aggregate state. The rejected
+proposal may remain visible through safe audit or error information.
+
+Acceptance Requirements
+
+The existing 168-test deterministic regression suite remains green;
+
+focused conformance tests pass;
+
+the complete investigation scope is enforced before provider execution;
+
+tool schemas reject unknown fields;
+
+provider results and investigation context are actually bounded;
+
+a retry that succeeds and is subsequently replayed returns the successful
+logical result;
+
+internal provider attempts are not counted as logical LLM actions;
+
+inconsistent hypothesis status/support proposals are rejected;
+
+evaluation metadata and other evaluation-relevant structures are deeply
+immutable;
+
+persistence round trips preserve all required relationships;
+
+duplicate IDs with different content produce explicit conflicts rather than
+silent success;
+
+essential provenance identifies what was queried, where it was queried, the
+applicable time range, and the completeness of the result.
+
 M11 — Deterministic Evaluation Scenario Harness
+
+Status: BLOCKED BY PRE-M11 CONFORMANCE GATE
 
 Implement the minimum harness required to execute a deterministic evaluation scenario against the existing application/controller stack.
 
@@ -1548,11 +1675,13 @@ Phase 1.1: COMPLETE
 
 Previous milestone achieved: M10 - Evaluation Domain
 
-Current milestone: M11 - Deterministic Evaluation Scenario Harness
+Current milestone: Pre-M11 Conformance Gate
 
 Status: NOT STARTED
 
 Authorization: CURRENT AUTHORIZED MILESTONE
+
+M11 - Deterministic Evaluation Scenario Harness: BLOCKED BY PRE-M11 CONFORMANCE GATE
 
 M12 - Investigation Evaluator: NOT STARTED
 
