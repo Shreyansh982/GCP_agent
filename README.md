@@ -4,6 +4,17 @@ An engineering project exploring a bounded, evidence-backed, LLM-assisted approa
 
 The central engineering question is where to draw the line between probabilistic reasoning and deterministic control. An LLM may help interpret a question, choose the next useful observation, and explain a result. It does not get direct access to databases, cloud credentials, shell commands, or unconstrained APIs. Application and domain code own validation, scope, limits, lifecycle, evidence identity, calculations, and persistence.
 
+## Project Snapshot
+
+| Area | Verified current state |
+| --- | --- |
+| Completed | Phase 1, Phase 1.1, and M10 (Evaluation Domain) |
+| Current | M11, Deterministic Evaluation Scenario Harness — authorized, not started |
+| Planned evaluation | 5 documented M11 core scenarios; the harness, evaluator, and M12–M15 work are not implemented |
+| Recorded M10 validation | 168 full-suite tests; 79 architecture tests; 7 focused M10 tests |
+| Default investigation limits | 12 actions; 5-minute duration; 7-day query interval; 100 result/collection items |
+| Default input limits | 4,000-question-character limit; 32 KiB serialized tool-request limit; 50 label/filter entries per map |
+
 ## Why this exists
 
 Investigating an incident often means moving between metrics, resources, alerts, time windows, and competing explanations. A question such as "Why did the payment service become slow?" should not be answered by plausible prose alone. It needs explicit observations - for example, latency, traffic, CPU, memory, and alerts - and a clear account of what those observations support, contradict, or leave unresolved.
